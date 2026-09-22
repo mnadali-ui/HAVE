@@ -51,9 +51,13 @@ function navigate(view){
   document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
   document.getElementById(view+"View").classList.add("active");
   document.querySelectorAll(".nav-item").forEach(n=>n.classList.toggle("active",n.dataset.view===view));
-  window.scrollTo({top:0,behavior:"smooth"})
+  window.scrollTo({top:0,behavior:"instant"});
 }
-document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",()=>navigate(b.dataset.view)));
+document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",()=>{
+  const view=b.dataset.view;
+  navigate(view);
+  if(view==="scan") setTimeout(openLiveCamera,0);
+}));
 
 document.querySelectorAll(".chip").forEach(chip=>chip.onclick=()=>{
   document.querySelectorAll(".chip").forEach(c=>c.classList.remove("active"));chip.classList.add("active");renderCollection(chip.dataset.filter)
@@ -77,7 +81,10 @@ function handlePhoto(file){
     ];
     document.getElementById("detectedCards").innerHTML=detected.map(cardRow).join("");
     document.getElementById("scanResult").classList.remove("hidden");
-    bindCardClicks()
+    cameraPanel.classList.add("hidden");
+    cameraFallback.classList.add("hidden");
+    bindCardClicks();
+    document.getElementById("scanResult").scrollIntoView({behavior:"instant",block:"start"})
   };
   reader.readAsDataURL(file)
 }
@@ -85,11 +92,14 @@ const cameraInput=document.getElementById("cameraInput");
 const galleryInput=document.getElementById("galleryInput");
 const openCameraBtn=document.getElementById("openCameraBtn");
 const cameraPanel=document.getElementById("cameraPanel");
+const cameraFallback=document.getElementById("cameraFallback");
 const cameraVideo=document.getElementById("cameraVideo");
 const cameraCanvas=document.getElementById("cameraCanvas");
 const takePhotoBtn=document.getElementById("takePhotoBtn");
-const closeCameraBtn=document.getElementById("closeCameraBtn");
 const cameraMessage=document.getElementById("cameraMessage");
+const scanCloseBtn=document.getElementById("scanCloseBtn");
+const retakeBtn=document.getElementById("retakeBtn");
+const analyzeCardBtn=document.getElementById("analyzeCardBtn");
 let cameraStream=null;
 
 function showCameraMessage(text){
@@ -99,28 +109,39 @@ function showCameraMessage(text){
 function stopCamera(){
   if(cameraStream){cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null}
   cameraVideo.srcObject=null;
-  cameraPanel.classList.add("hidden");
 }
 async function openLiveCamera(){
+  document.getElementById("scanResult").classList.add("hidden");
   cameraMessage.classList.add("hidden");
+  cameraFallback.classList.add("hidden");
+  cameraPanel.classList.remove("hidden");
   if(!navigator.mediaDevices?.getUserMedia){
-    cameraInput.click();
+    cameraPanel.classList.add("hidden");
+    cameraFallback.classList.remove("hidden");
     return;
   }
   try{
+    stopCamera();
     cameraStream=await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:{ideal:"environment"}},
+      video:{
+        facingMode:{ideal:"environment"},
+        width:{ideal:1920},
+        height:{ideal:1080}
+      },
       audio:false
     });
     cameraVideo.srcObject=cameraStream;
-    cameraPanel.classList.remove("hidden");
     await cameraVideo.play();
   }catch(err){
-    showCameraMessage("Non riesco ad aprire la fotocamera direttamente. Provo con la fotocamera di iPhone.");
-    cameraInput.click();
+    cameraPanel.classList.add("hidden");
+    cameraFallback.classList.remove("hidden");
+    showCameraMessage("Consenti l'accesso alla fotocamera oppure usa il pulsante qui sotto.");
   }
 }
-openCameraBtn.addEventListener("click",openLiveCamera);
+openCameraBtn.addEventListener("click",()=>{
+  if(navigator.mediaDevices?.getUserMedia) openLiveCamera();
+  else cameraInput.click();
+});
 takePhotoBtn.addEventListener("click",()=>{
   if(!cameraVideo.videoWidth){showCameraMessage("La fotocamera non è ancora pronta.");return}
   cameraCanvas.width=cameraVideo.videoWidth;
@@ -131,13 +152,29 @@ takePhotoBtn.addEventListener("click",()=>{
     if(!blob)return;
     const file=new File([blob],"have-scan.jpg",{type:"image/jpeg"});
     stopCamera();
+    cameraPanel.classList.add("hidden");
     handlePhoto(file);
-  },"image/jpeg",0.92);
+  },"image/jpeg",0.94);
 });
-closeCameraBtn.addEventListener("click",stopCamera);
+scanCloseBtn.addEventListener("click",()=>{stopCamera();navigate("home")});
+retakeBtn.addEventListener("click",openLiveCamera);
 cameraInput.addEventListener("change",e=>handlePhoto(e.target.files[0]));
-galleryInput.addEventListener("change",e=>handlePhoto(e.target.files[0]));
+galleryInput.addEventListener("change",e=>{
+  stopCamera();
+  cameraPanel.classList.add("hidden");
+  handlePhoto(e.target.files[0]);
+});
 document.addEventListener("visibilitychange",()=>{if(document.hidden&&cameraStream)stopCamera()});
+
+analyzeCardBtn.addEventListener("click",()=>{
+  const notice=document.getElementById("recognitionNotice");
+  notice.textContent="Analisi demo in corso…";
+  setTimeout(()=>{
+    notice.textContent="Demo: carta riconosciuta. Il prossimo passaggio collega il riconoscimento reale a set, numero e variante.";
+    document.getElementById("detectedCards").scrollIntoView({behavior:"smooth",block:"start"});
+  },700);
+});
+
 document.getElementById("addDetected").onclick=()=>{
   const existing=new Set(collection.map(c=>c.id));
   collection=[...collection,...detected.filter(c=>!existing.has(c.id))];
