@@ -63,3 +63,6 @@ body.scanner-mode .scan-result{min-height:100svh;padding-top:calc(12px + env(saf
 .catalog-status.success{background:#ecfdf5;color:#047857}
 .catalog-status.error{background:#fef2f2;color:#b91c1c}
 .real-thumb{object-fit:cover;padding:0}
+
+.detail-art{overflow:hidden;flex:0 0 110px}.detail-art .real-thumb{width:100%;height:100%;max-width:110px;max-height:150px;object-fit:contain;border-radius:12px;background:transparent}
+@media(max-width:480px){.detail-art{width:86px;height:118px;flex-basis:86px}.detail-art .real-thumb{max-width:86px;max-height:118px}.detail-head{gap:12px}}
