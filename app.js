@@ -208,10 +208,7 @@ analyzeCardBtn.addEventListener("click",async()=>{
     catalogQuery.value=r.name||"";
     await searchCatalog(r);
   }catch(err){
-    const onGithub=location.hostname.endsWith("github.io");
-    notice.textContent=onGithub
-      ?"Il motore visivo è pronto nel progetto, ma il backend non è ancora pubblicato. Completiamo ora il collegamento."
-      :"Errore riconoscimento: "+err.message;
+    notice.textContent="Errore riconoscimento: "+(err&&err.message?err.message:"errore sconosciuto");
     catalogQuery.focus();
   }finally{
     analyzeCardBtn.disabled=false;
