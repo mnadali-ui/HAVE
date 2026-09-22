@@ -53,47 +53,53 @@ export default async function handler(req,res){
   if(req.method==="OPTIONS") return res.status(204).end();
   if(req.method!=="POST") return res.status(405).json({error:"Method not allowed"});
 
-  const {name,number,set,setCode,finish}=req.body||{};
-  if(!name) return res.status(400).json({error:"Missing card name"});
+  const {name,number,set,setCode,finish,idProduct}=req.body||{};
+  if(!name && !idProduct) return res.status(400).json({error:"Missing card identity"});
 
   try{
-    const [pr,gr]=await Promise.all([
-      fetch(PRODUCT_URL),
-      fetch(PRICE_URL)
-    ]);
-    if(!pr.ok||!gr.ok) throw new Error("Cardmarket public files unavailable");
-
-    const [productsRaw,pricesRaw]=await Promise.all([pr.json(),gr.json()]);
-    const products=rows(productsRaw);
+    const guideResponse=await fetch(PRICE_URL);
+    if(!guideResponse.ok) throw new Error("Cardmarket price guide unavailable");
+    const pricesRaw=await guideResponse.json();
     const prices=rows(pricesRaw);
 
-    const candidates=products
-      .map(p=>({p,score:productScore(p,{name,number,set,setCode})}))
-      .filter(x=>x.score>=35)
-      .sort((a,b)=>b.score-a.score)
-      .slice(0,10);
+    let resolvedProductId=idProduct?String(idProduct):"";
+    let resolvedName=name||null;
+    let resolvedScore=100;
 
-    if(!candidates.length) return res.status(200).json({match:null,source:"Cardmarket official public files"});
+    if(!resolvedProductId){
+      const productResponse=await fetch(PRODUCT_URL);
+      if(!productResponse.ok) throw new Error("Cardmarket product catalogue unavailable");
+      const productsRaw=await productResponse.json();
+      const products=rows(productsRaw);
 
-    const top=candidates[0];
-    const second=candidates[1];
-    const exactEnough=top.score>=60 && (!second || top.score-second.score>=10 || top.score>=85);
-    if(!exactEnough){
-      return res.status(200).json({
-        match:null,
-        ambiguous:true,
-        candidates:candidates.slice(0,5).map(x=>({
-          idProduct:get(x.p,"idProduct","id_product"),
-          name:get(x.p,"name","Name"),
-          score:x.score
-        })),
-        source:"Cardmarket official public files"
-      });
+      const candidates=products
+        .map(p=>({p,score:productScore(p,{name,number,set,setCode})}))
+        .filter(x=>x.score>=35)
+        .sort((a,b)=>b.score-a.score)
+        .slice(0,10);
+
+      if(!candidates.length) return res.status(200).json({match:null,source:"Cardmarket official public files"});
+      const top=candidates[0], second=candidates[1];
+      const exactEnough=top.score>=60 && (!second || top.score-second.score>=10 || top.score>=85);
+      if(!exactEnough){
+        return res.status(200).json({
+          match:null, ambiguous:true,
+          candidates:candidates.slice(0,5).map(x=>({
+            idProduct:get(x.p,"idProduct","id_product"),
+            name:get(x.p,"name","Name"),
+            score:x.score
+          })),
+          source:"Cardmarket official public files"
+        });
+      }
+      resolvedProductId=String(get(top.p,"idProduct","id_product")||"");
+      resolvedName=get(top.p,"name","Name")||name||null;
+      resolvedScore=top.score;
     }
 
-    const id=String(get(top.p,"idProduct","id_product")||"");
+    const id=resolvedProductId;
     const row=prices.find(r=>String(get(r,"idProduct","id_product"))===id);
-    if(!row) return res.status(200).json({match:null,product:{idProduct:id,name:get(top.p,"name","Name")},source:"Cardmarket official public files"});
+    if(!row) return res.status(200).json({match:null,product:{idProduct:id,name:resolvedName},source:"Cardmarket official public files"});
 
     const wantsHolo=/holo|foil|textured/i.test(String(finish||""));
     const trend=wantsHolo
@@ -113,11 +119,11 @@ export default async function handler(req,res){
     return res.status(200).json({
       match:value?{
         idProduct:id,
-        name:get(top.p,"name","Name"),
+        name:resolvedName,
         value,
         currency:"EUR",
         trend,avg7,avg30,low,
-        score:top.score,
+        score:resolvedScore,
         createdAt:pricesRaw?.createdAt||null
       }:null,
       source:"Cardmarket official public files"
