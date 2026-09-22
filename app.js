@@ -461,6 +461,43 @@ async function loadCatalogCard(id,locale="it"){
   }catch(err){catalogResults.innerHTML='<div class="catalog-status error">Non riesco a caricare questa carta.</div>';}
 }
 
+async function enrichSavedCardPrices(card){
+  try{
+    const q=String(card.name||"").trim();
+    if(q.length<2) return card;
+    async function search(locale){
+      const url="https://api.tcgdex.net/v2/"+locale+"/cards?name="+encodeURIComponent(q)+"&pagination:itemsPerPage=50";
+      const res=await fetch(url,{headers:{"Accept":"application/json"}});
+      if(!res.ok) return [];
+      const list=await res.json();
+      return Array.isArray(list)?list.map(x=>({...x,_locale:locale})):[];
+    }
+    let list=await search("it");
+    if(!list.length) list=await search("en");
+    const wanted=String(card.number||"").split("/")[0].replace(/^0+/,"");
+    let exact=list.filter(x=>String(x.localId||"").replace(/^0+/,"")===wanted);
+    if(!exact.length) return card;
+    let candidate=exact[0];
+    if(exact.length>1 && card.setCode){
+      const sc=String(card.setCode).toLowerCase();
+      candidate=exact.find(x=>String(x.id||"").toLowerCase().includes(sc))||candidate;
+    }
+    let res=await fetch("https://api.tcgdex.net/v2/"+(candidate._locale||"it")+"/cards/"+encodeURIComponent(candidate.id));
+    if(!res.ok && candidate._locale!=="en") res=await fetch("https://api.tcgdex.net/v2/en/cards/"+encodeURIComponent(candidate.id));
+    if(!res.ok) return card;
+    const full=await res.json();
+    const recognition={finish:card.finish||card.variant||"",language:card.language,number:card.number,name:card.name,set:card.set,set_code:card.setCode};
+    let sources=await priceSourcesFromTcgdex(full,recognition);
+    const directCm=await fetchDirectCardmarketPrice({name:full.name||card.name,number:full.localId||card.number,set:(full.set&&full.set.name)||card.set,setCode:(full.set&&full.set.id)||card.setCode,finish:card.finish||card.variant});
+    sources=sources.filter(s=>s.name!=="Cardmarket");
+    if(directCm && Number.isFinite(directCm.value) && directCm.value>0) sources.unshift(directCm);
+    const total=(full.set&&full.set.cardCount&&(full.set.cardCount.official||full.set.cardCount.total))||"";
+    const updatedCard={...card,catalogId:full.id||candidate.id,set:(full.set&&full.set.name)||card.set,setCode:(full.set&&full.set.id)||card.setCode,number:total?(full.localId+"/"+total):(full.localId||card.number),rarity:full.rarity||card.rarity,image:tcgdexImage(full.image)||card.image,catalogVerified:true,sources,updated:latestPriceUpdate(sources)};
+    const idx=collection.findIndex(x=>x.id===card.id);
+    if(idx>=0){collection[idx]=updatedCard;try{localStorage.setItem("have_collection",JSON.stringify(collection))}catch(e){} renderAll();}
+    return updatedCard;
+  }catch(e){return card;}
+}
 function realCardRow(c){
   const art=c.image?'<img class="card-thumb real-thumb" src="'+c.image+'" alt="'+c.name+'" onerror="this.style.display=\'none\'">':'<div class="card-thumb">🃏</div>';
   return '<button class="card-row" data-card="'+c.id+'" style="width:100%;text-align:left;border-style:solid">'+art+'<div><div class="card-name">'+c.name+'</div><div class="meta">'+c.set+' • '+c.number+'</div><div class="meta">Codice espansione: '+(c.setCode||"—")+'</div><div class="meta">'+c.language+' • '+c.rarity+'</div><div class="meta">'+(c.variant||"Variante da confermare")+'</div><span class="pill">'+(c.catalogVerified===false?"DA VERIFICARE":"CATALOGO REALE")+'</span></div><div class="price">'+((c.sources&&c.sources.length)?euro(robustEstimate(c.sources))+'<div class="meta">Stima HAVE</div>':'<span class="meta">Prezzo<br>da verificare</span>')+'</div></button>';
@@ -475,26 +512,42 @@ document.getElementById("addDetected").onclick=()=>{
   save();navigate("collection")
 };
 
-function showDetail(id){
-  const c=[...collection,...detected].find(x=>x.id===id);if(!c)return;
+async function showDetail(id){
+  let c=[...collection,...detected].find(x=>x.id===id);if(!c)return;
   previousView=document.querySelector(".view.active")?.id?.replace("View","")||"home";
-  document.getElementById("cardDetail").innerHTML=`<div class="detail-card">
-    <div class="detail-head"><div class="detail-art">${c.emoji||"🃏"}</div><div class="detail-info">
-      <h2>${c.name}</h2><div class="meta">${c.set} (${c.setCode})</div><div class="meta">N. ${c.number}</div><div class="meta">${c.rarity} • ${c.language}</div><div class="meta">${c.variant||"Variante da confermare"}</div>${c.specialMarkings&&c.specialMarkings.length?'<div class="meta">Segni speciali: '+c.specialMarkings.join(", ")+'</div>':""}
-      <span class="pill ${c.status==="trade"?"trade":""}">${c.status==="trade"?"DISPONIBILE PER SCAMBIO":"COLLEZIONE"}</span>
-    </div></div>
-    <div class="market-box">
-      <strong>Valori di mercato</strong>
-      ${(c.sources||[]).map(s=>`<div class="market-line"><span>${s.name}${s.originalCurrency==="USD"&&Number.isFinite(s.originalValue)?` (${s.originalValue.toFixed(2)} → EUR)`:``}</span><strong>${Number.isFinite(s.value)?euro(s.value):"Cambio EUR non disponibile"}</strong></div>`).join("")}
-      <div class="market-line estimate"><span>Stima HAVE</span><span>${euro(robustEstimate(c.sources||[]))}</span></div>
-      <div class="source-note">Ultimo aggiornamento: ${c.updated||"—"}. I valori mostrati in questa versione sono demo. L'integrazione reale userà fonti legittime e mostrerà sempre provenienza e timestamp.</div>
-    </div>
-  </div>`;
-  navigate("detail")
+  function renderDetail(card,loading){
+    const sourceLines=(card.sources||[]).map(s=>{
+      const original=(s.originalCurrency==="USD"&&Number.isFinite(s.originalValue))?" ($"+s.originalValue.toFixed(2)+" → EUR)":"";
+      const val=Number.isFinite(s.value)?euro(s.value):"Cambio EUR non disponibile";
+      return '<div class="market-line"><span>'+s.name+original+'</span><strong>'+val+'</strong></div>';
+    }).join("");
+    const estimate=robustEstimate(card.sources||[]);
+    const art=card.image?'<img class="real-thumb" src="'+card.image+'" alt="">':(card.emoji||"🃏");
+    const marks=card.specialMarkings&&card.specialMarkings.length?'<div class="meta">Segni speciali: '+card.specialMarkings.join(", ")+'</div>':"";
+    const note=loading?"Sto verificando automaticamente catalogo e prezzi.":((card.sources||[]).length?"Ultimo aggiornamento: "+(card.updated||"—")+". Fonti mancanti escluse dalla Stima HAVE.":"Prezzo non ancora disponibile per questa variante.");
+    document.getElementById("cardDetail").innerHTML='<div class="detail-card">'+
+      '<div class="detail-head"><div class="detail-art">'+art+'</div><div class="detail-info">'+
+      '<h2>'+card.name+'</h2><div class="meta">'+card.set+' ('+(card.setCode||"—")+')</div><div class="meta">N. '+card.number+'</div><div class="meta">'+card.rarity+' • '+card.language+'</div><div class="meta">'+(card.variant||"Variante da confermare")+'</div>'+marks+
+      '<span class="pill '+(card.status==="trade"?"trade":"")+'">'+(card.status==="trade"?"DISPONIBILE PER SCAMBIO":"COLLEZIONE")+'</span></div></div>'+
+      '<div class="market-box"><strong>Valori di mercato</strong>'+(loading?'<div class="market-line"><span>Aggiornamento prezzi</span><strong>in corso…</strong></div>':sourceLines)+
+      '<div class="market-line estimate"><span>Stima HAVE</span><span>'+(estimate>0?euro(estimate):"—")+'</span></div><div class="source-note">'+note+'</div></div></div>';
+  }
+  const needsRefresh=!(c.sources||[]).some(s=>Number.isFinite(s.value)&&s.value>0);
+  renderDetail(c,needsRefresh);
+  navigate("detail");
+  if(needsRefresh){c=await enrichSavedCardPrices(c);renderDetail(c,false);}
 }
 document.getElementById("backBtn").onclick=()=>navigate(previousView==="detail"?"home":previousView);
-document.getElementById("refreshValues").onclick=()=>{
-  document.getElementById("portfolioDelta").textContent="Aggiornamento valori eseguito • demo";
-  setTimeout(()=>document.getElementById("portfolioDelta").textContent="Stima demo • aggiornamento giornaliero previsto",2200)
+document.getElementById("refreshValues").onclick=async()=>{
+  const delta=document.getElementById("portfolioDelta");
+  delta.textContent="Aggiornamento prezzi in corso…";
+  let updated=0;
+  for(const card of [...collection]){
+    const before=robustEstimate(card.sources||[]);
+    const refreshed=await enrichSavedCardPrices(card);
+    const after=robustEstimate(refreshed.sources||[]);
+    if(after>0 && after!==before) updated++;
+  }
+  delta.textContent=updated?("Aggiornati "+updated+" valori • fonti reali"):"Valori controllati • nessun nuovo prezzo";
 };
 renderAll();
