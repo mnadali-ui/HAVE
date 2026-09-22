@@ -51,6 +51,7 @@ function navigate(view){
   document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
   document.getElementById(view+"View").classList.add("active");
   document.querySelectorAll(".nav-item").forEach(n=>n.classList.toggle("active",n.dataset.view===view));
+  document.body.classList.toggle("scanner-mode",view==="scan");
   window.scrollTo({top:0,behavior:"instant"});
 }
 document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",()=>{
