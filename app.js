@@ -68,7 +68,17 @@ function handlePhoto(file){
   if(!file)return;
   const reader=new FileReader();
   reader.onload=e=>{
-    document.getElementById("scanPreview").src=e.target.result;
+    const original=e.target.result;
+    const img=new Image();
+    img.onload=()=>{
+      const maxSide=1600;
+      const scale=Math.min(1,maxSide/Math.max(img.naturalWidth,img.naturalHeight));
+      const canvas=document.createElement("canvas");
+      canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));
+      canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
+      canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);
+      currentImageDataUrl=canvas.toDataURL("image/jpeg",0.86);
+      document.getElementById("scanPreview").src=currentImageDataUrl;
     detected=[
       {...demoCards[0],id:"scan-"+Date.now()+"-1",status:"keep"},
       {...demoCards[1],id:"scan-"+Date.now()+"-2",status:"trade"},
@@ -84,8 +94,11 @@ function handlePhoto(file){
     document.getElementById("scanResult").classList.remove("hidden");
     cameraPanel.classList.add("hidden");
     cameraFallback.classList.add("hidden");
-    bindCardClicks();
-    document.getElementById("scanResult").scrollIntoView({behavior:"instant",block:"start"})
+      bindCardClicks();
+      document.getElementById("scanResult").scrollIntoView({behavior:"instant",block:"start"});
+    };
+    img.onerror=()=>showCameraMessage("Non riesco a leggere questa foto.");
+    img.src=original;
   };
   reader.readAsDataURL(file)
 }
@@ -106,6 +119,8 @@ const catalogSearchBtn=document.getElementById("catalogSearchBtn");
 const catalogResults=document.getElementById("catalogResults");
 let cameraStream=null;
 let selectedCatalogCard=null;
+let currentImageDataUrl=null;
+const HAVE_API_BASE=(window.HAVE_API_BASE||"").replace(/\/$/,"");
 
 function showCameraMessage(text){
   cameraMessage.textContent=text;
@@ -171,17 +186,45 @@ galleryInput.addEventListener("change",e=>{
 });
 document.addEventListener("visibilitychange",()=>{if(document.hidden&&cameraStream)stopCamera()});
 
-analyzeCardBtn.addEventListener("click",()=>{
+analyzeCardBtn.addEventListener("click",async()=>{
   const notice=document.getElementById("recognitionNotice");
-  notice.textContent="Per questa versione conferma la carta nel catalogo reale qui sotto.";
-  catalogQuery.focus();
-  catalogQuery.scrollIntoView({behavior:"smooth",block:"center"});
+  if(!currentImageDataUrl){
+    notice.textContent="Prima scatta o scegli una foto.";
+    return;
+  }
+  analyzeCardBtn.disabled=true;
+  analyzeCardBtn.textContent="Riconoscimento in corso…";
+  notice.textContent="Sto leggendo nome, set, numero, lingua e variante dalla foto.";
+  try{
+    const endpoint=HAVE_API_BASE+"/api/recognize";
+    const res=await fetch(endpoint,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({image:currentImageDataUrl})
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||"Servizio di riconoscimento non disponibile");
+    const r=data.recognition||{};
+    const confidence=Math.round((Number(r.confidence)||0)*100);
+    notice.textContent="Riconoscimento: "+(r.name||"carta non certa")+(confidence?" • "+confidence+"%":"")+". Verifico nel catalogo Pokémon…";
+    catalogQuery.value=r.name||"";
+    await searchCatalog(r);
+  }catch(err){
+    const onGithub=location.hostname.endsWith("github.io");
+    notice.textContent=onGithub
+      ?"Il motore visivo è pronto nel progetto, ma il backend non è ancora pubblicato. Completiamo ora il collegamento."
+      :"Errore riconoscimento: "+err.message;
+    catalogQuery.focus();
+  }finally{
+    analyzeCardBtn.disabled=false;
+    analyzeCardBtn.textContent="Riconosci carta";
+  }
 });
 
 function tcgdexImage(url){ return url ? url + "/high.webp" : ""; }
 
-async function searchCatalog(){
-  const q=catalogQuery.value.trim();
+async function searchCatalog(recognition=null){
+  const q=(recognition&&recognition.name?recognition.name:catalogQuery.value).trim();
   if(q.length<2){catalogResults.innerHTML='<div class="catalog-status">Scrivi almeno 2 caratteri.</div>';return;}
   catalogResults.innerHTML='<div class="catalog-status">Ricerca nel catalogo…</div>';
   try{
@@ -189,7 +232,13 @@ async function searchCatalog(){
     const res=await fetch(url,{headers:{"Accept":"application/json"}});
     if(!res.ok) throw new Error("Catalogo non disponibile");
     const cards=await res.json();
-    const list=Array.isArray(cards)?cards.slice(0,20):[];
+    let list=Array.isArray(cards)?cards.slice(0,40):[];
+    if(recognition&&recognition.number){
+      const wanted=String(recognition.number).split("/")[0].replace(/^0+/,"");
+      const exact=list.filter(c=>String(c.localId||"").replace(/^0+/,"")===wanted);
+      if(exact.length) list=[...exact,...list.filter(c=>!exact.includes(c))];
+    }
+    list=list.slice(0,20);
     if(!list.length){catalogResults.innerHTML='<div class="catalog-status">Nessuna carta trovata.</div>';return;}
     catalogResults.innerHTML=list.map(c=>'<button class="catalog-card" type="button" data-catalog-id="'+c.id+'"><img src="'+tcgdexImage(c.image)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'"><div><strong>'+(c.name||"Carta Pokémon")+'</strong><div class="meta">Numero '+(c.localId||"—")+'</div><div class="catalog-id">'+c.id+'</div></div><span>›</span></button>').join("");
     catalogResults.querySelectorAll("[data-catalog-id]").forEach(btn=>btn.addEventListener("click",()=>loadCatalogCard(btn.dataset.catalogId)));
