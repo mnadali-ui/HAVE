@@ -252,16 +252,21 @@ function tcgdexPriceValue(v){
   return Number.isFinite(n) && n>0 ? n : null;
 }
 
+let usdEurCache={rate:null,ts:0};
 async function usdToEurRate(){
+  const now=Date.now();
+  if(usdEurCache.rate && now-usdEurCache.ts<3600000) return usdEurCache.rate;
   try{
-    const res=await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR");
+    const res=await fetch(HAVE_API_BASE+"/api/fx");
     if(!res.ok) throw new Error("FX unavailable");
     const data=await res.json();
-    const rate=Number(data?.rates?.EUR);
-    return Number.isFinite(rate)&&rate>0?rate:null;
-  }catch(e){
-    return null;
-  }
+    const rate=Number(data?.rate);
+    if(Number.isFinite(rate)&&rate>0){
+      usdEurCache={rate,ts:now};
+      return rate;
+    }
+  }catch(e){}
+  return null;
 }
 
 async function priceSourcesFromTcgdex(c, recognition=null){
@@ -543,7 +548,9 @@ async function showDetail(id){
       '<div class="market-box"><strong>Valori di mercato</strong>'+(loading?'<div class="market-line"><span>Aggiornamento prezzi</span><strong>in corso…</strong></div>':sourceLines)+
       '<div class="market-line estimate"><span>Stima HAVE</span><span>'+(estimate>0?euro(estimate):"—")+'</span></div><div class="source-note">'+note+'</div></div></div>';
   }
-  const needsRefresh=!(c.sources||[]).some(s=>Number.isFinite(s.value)&&s.value>0);
+  const hasAnyPrice=(c.sources||[]).some(s=>Number.isFinite(s.value)&&s.value>0);
+  const needsFx=(c.sources||[]).some(s=>s.name==="TCGplayer"&&s.originalCurrency==="USD"&&Number.isFinite(s.originalValue)&&!Number.isFinite(s.value));
+  const needsRefresh=!hasAnyPrice||needsFx;
   renderDetail(c,needsRefresh);
   navigate("detail");
   if(needsRefresh){c=await enrichSavedCardPrices(c);renderDetail(c,false);}
