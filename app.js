@@ -79,18 +79,13 @@ function handlePhoto(file){
       canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);
       currentImageDataUrl=canvas.toDataURL("image/jpeg",0.86);
       document.getElementById("scanPreview").src=currentImageDataUrl;
-    detected=[
-      {...demoCards[0],id:"scan-"+Date.now()+"-1",status:"keep"},
-      {...demoCards[1],id:"scan-"+Date.now()+"-2",status:"trade"},
-      {...demoCards[2],id:"scan-"+Date.now()+"-3",status:"trade"},
-      {id:"scan-"+Date.now()+"-4",name:"Gengar",set:"Fiamme Oscure",setCode:"DEMO",number:"057/100",rarity:"Rare",language:"ITA",variant:"Holo",status:"keep",emoji:"👻",sources:[{name:"Cardmarket",value:8.7},{name:"TCGplayer",value:9.4}],updated:"Oggi"},
-      {id:"scan-"+Date.now()+"-5",name:"Eevee",set:"Evoluzioni Prismatiche",setCode:"PRE",number:"074/131",rarity:"Common",language:"ITA",variant:"Reverse",status:"trade",emoji:"🦊",sources:[{name:"Cardmarket",value:4.6},{name:"TCGplayer",value:5.1}],updated:"Oggi"},
-      {id:"scan-"+Date.now()+"-6",name:"Lucario ex",set:"Destini di Paldea",setCode:"PAF",number:"081/091",rarity:"Ultra Rare",language:"ITA",variant:"Holo",status:"keep",emoji:"🥊",sources:[{name:"Cardmarket",value:7.2},{name:"TCGplayer",value:7.8}],updated:"Oggi"},
-      {id:"scan-"+Date.now()+"-7",name:"Greninja ex",set:"Crepuscolo Mascherato",setCode:"TWM",number:"106/167",rarity:"Double Rare",language:"ITA",variant:"Holo",status:"trade",emoji:"💧",sources:[{name:"Cardmarket",value:6.1},{name:"TCGplayer",value:6.6}],updated:"Oggi"},
-      {id:"scan-"+Date.now()+"-8",name:"Mewtwo",set:"Pokémon 151",setCode:"MEW",number:"150/165",rarity:"Rare",language:"ITA",variant:"Holo",status:"keep",emoji:"🧬",sources:[{name:"Cardmarket",value:3.8},{name:"TCGplayer",value:4.2}],updated:"Oggi"},
-      {id:"scan-"+Date.now()+"-9",name:"Snorlax",set:"Pokémon 151",setCode:"MEW",number:"143/165",rarity:"Uncommon",language:"ITA",variant:"Reverse",status:"trade",emoji:"💤",sources:[{name:"Cardmarket",value:2.1},{name:"TCGplayer",value:2.5}],updated:"Oggi"}
-    ];
-    document.getElementById("detectedCards").innerHTML=detected.map(cardRow).join("");
+      detected=[];
+      lastRecognition=null;
+      document.getElementById("detectedCards").innerHTML="";
+      document.getElementById("addDetected").classList.add("hidden");
+      catalogResults.innerHTML="";
+      document.getElementById("recognitionNotice").textContent="Foto pronta. Premi Riconosci carta.";
+
     document.getElementById("scanResult").classList.remove("hidden");
     cameraPanel.classList.add("hidden");
     cameraFallback.classList.add("hidden");
@@ -119,6 +114,7 @@ const catalogSearchBtn=document.getElementById("catalogSearchBtn");
 const catalogResults=document.getElementById("catalogResults");
 let cameraStream=null;
 let selectedCatalogCard=null;
+let lastRecognition=null;
 let currentImageDataUrl=null;
 const HAVE_API_BASE=(window.HAVE_API_BASE||"https://have-self.vercel.app").replace(/\/$/,"");
 
@@ -205,8 +201,10 @@ analyzeCardBtn.addEventListener("click",async()=>{
     const data=await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error||"Servizio di riconoscimento non disponibile");
     const r=data.recognition||{};
+    lastRecognition=r;
     const confidence=Math.round((Number(r.confidence)||0)*100);
-    notice.textContent="Riconoscimento: "+(r.name||"carta non certa")+(confidence?" • "+confidence+"%":"")+". Verifico nel catalogo Pokémon…";
+    const details=[r.language,r.finish,r.stamp||r.stamp_text,r.edition,r.promo].filter(Boolean).join(" • ");
+    notice.textContent="Riconoscimento: "+(r.name||"carta non certa")+(r.number?" • "+r.number:"")+(confidence?" • "+confidence+"%":"")+(details?"\n"+details:"")+". Verifico nel catalogo Pokémon…";
     catalogQuery.value=r.name||"";
     await searchCatalog(r);
   }catch(err){
@@ -252,7 +250,31 @@ async function loadCatalogCard(id){
     if(!res.ok) throw new Error("Carta non disponibile");
     const c=await res.json();
     const total=(c.set&&c.set.cardCount&&(c.set.cardCount.official||c.set.cardCount.total))||"";
-    selectedCatalogCard={id:"tcgdex-"+c.id,catalogId:c.id,name:c.name||"Carta Pokémon",set:(c.set&&c.set.name)||"Set sconosciuto",setCode:(c.set&&c.set.id)||"",number:total?(c.localId+"/"+total):(c.localId||"—"),rarity:c.rarity||"—",language:"ITA",variant:"Da confermare",status:"keep",emoji:"🃏",image:tcgdexImage(c.image),sources:[],updated:"Catalogo live"};
+    const r=lastRecognition||{};
+    const variantParts=[r.finish,r.variant,r.stamp,r.stamp_text,r.edition,r.promo].filter(Boolean);
+    selectedCatalogCard={
+      id:"tcgdex-"+c.id,
+      catalogId:c.id,
+      name:c.name||r.name||"Carta Pokémon",
+      set:(c.set&&c.set.name)||r.set||"Set sconosciuto",
+      setCode:(c.set&&c.set.id)||"",
+      number:total?(c.localId+"/"+total):(c.localId||r.number||"—"),
+      rarity:c.rarity||r.rarity||"—",
+      language:r.language||"Da confermare",
+      finish:r.finish||null,
+      stamp:r.stamp||null,
+      stampText:r.stamp_text||null,
+      edition:r.edition||null,
+      promo:r.promo||null,
+      specialMarkings:Array.isArray(r.special_markings)?r.special_markings:[],
+      variant:variantParts.length?variantParts.join(" • "):"Da confermare",
+      status:"keep",
+      emoji:"🃏",
+      image:tcgdexImage(c.image),
+      sources:[],
+      recognitionConfidence:Number(r.confidence)||null,
+      updated:"Catalogo live"
+    };
     detected=[selectedCatalogCard];
     document.getElementById("detectedCards").innerHTML=realCardRow(selectedCatalogCard);
     document.getElementById("addDetected").classList.remove("hidden");
@@ -264,7 +286,7 @@ async function loadCatalogCard(id){
 
 function realCardRow(c){
   const art=c.image?'<img class="card-thumb real-thumb" src="'+c.image+'" alt="'+c.name+'" onerror="this.style.display=\'none\'">':'<div class="card-thumb">🃏</div>';
-  return '<button class="card-row" data-card="'+c.id+'" style="width:100%;text-align:left;border-style:solid">'+art+'<div><div class="card-name">'+c.name+'</div><div class="meta">'+c.set+' • '+c.number+'</div><div class="meta">'+c.language+' • '+c.rarity+'</div><span class="pill">CATALOGO REALE</span></div><div class="price"><span class="meta">Prezzo<br>da collegare</span></div></button>';
+  return '<button class="card-row" data-card="'+c.id+'" style="width:100%;text-align:left;border-style:solid">'+art+'<div><div class="card-name">'+c.name+'</div><div class="meta">'+c.set+' • '+c.number+'</div><div class="meta">'+c.language+' • '+c.rarity+'</div><div class="meta">'+(c.variant||"Variante da confermare")+'</div><span class="pill">CATALOGO REALE</span></div><div class="price"><span class="meta">Prezzo<br>da collegare</span></div></button>';
 }
 
 catalogSearchBtn.addEventListener("click",searchCatalog);
@@ -281,7 +303,7 @@ function showDetail(id){
   previousView=document.querySelector(".view.active")?.id?.replace("View","")||"home";
   document.getElementById("cardDetail").innerHTML=`<div class="detail-card">
     <div class="detail-head"><div class="detail-art">${c.emoji||"🃏"}</div><div class="detail-info">
-      <h2>${c.name}</h2><div class="meta">${c.set} (${c.setCode})</div><div class="meta">N. ${c.number}</div><div class="meta">${c.rarity} • ${c.language} • ${c.variant}</div>
+      <h2>${c.name}</h2><div class="meta">${c.set} (${c.setCode})</div><div class="meta">N. ${c.number}</div><div class="meta">${c.rarity} • ${c.language}</div><div class="meta">${c.variant||"Variante da confermare"}</div>${c.specialMarkings&&c.specialMarkings.length?'<div class="meta">Segni speciali: '+c.specialMarkings.join(", ")+'</div>':""}
       <span class="pill ${c.status==="trade"?"trade":""}">${c.status==="trade"?"DISPONIBILE PER SCAMBIO":"COLLEZIONE"}</span>
     </div></div>
     <div class="market-box">
