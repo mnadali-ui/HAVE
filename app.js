@@ -385,7 +385,8 @@ async function fetchDirectCardmarketPrice(card){
         number:card.number,
         set:card.set,
         setCode:card.setCode,
-        finish:card.finish
+        finish:card.finish,
+        idProduct:card.idProduct||null
       })
     });
     const data=await res.json().catch(()=>({}));
@@ -423,7 +424,8 @@ async function loadCatalogCard(id,locale="it"){
       number:(c.localId||lastRecognition?.number||""),
       set:(c.set&&c.set.name)||lastRecognition?.set,
       setCode:(c.set&&c.set.id)||lastRecognition?.set_code,
-      finish:lastRecognition?.finish
+      finish:lastRecognition?.finish,
+      idProduct:c?.pricing?.cardmarket?.idProduct||null
     });
     sources=sources.filter(s=>s.name!=="Cardmarket");
     if(directCm && Number.isFinite(directCm.value) && directCm.value>0) sources.unshift(directCm);
@@ -434,6 +436,7 @@ async function loadCatalogCard(id,locale="it"){
     selectedCatalogCard={
       id:"tcgdex-"+c.id+"-"+Date.now(),
       catalogId:c.id,
+      cardmarketIdProduct:c?.pricing?.cardmarket?.idProduct||null,
       name:c.name||r.name||"Carta Pokémon",
       set:(c.set&&c.set.name)||r.set||"Set sconosciuto",
       setCode:(c.set&&c.set.id)||"",
@@ -495,11 +498,11 @@ async function enrichSavedCardPrices(card){
     const full=await res.json();
     const recognition={finish:card.finish||card.variant||"",language:card.language,number:card.number,name:card.name,set:card.set,set_code:card.setCode};
     let sources=await priceSourcesFromTcgdex(full,recognition);
-    const directCm=await fetchDirectCardmarketPrice({name:full.name||card.name,number:full.localId||card.number,set:(full.set&&full.set.name)||card.set,setCode:(full.set&&full.set.id)||card.setCode,finish:card.finish||card.variant});
+    const directCm=await fetchDirectCardmarketPrice({name:full.name||card.name,number:full.localId||card.number,set:(full.set&&full.set.name)||card.set,setCode:(full.set&&full.set.id)||card.setCode,finish:card.finish||card.variant,idProduct:full?.pricing?.cardmarket?.idProduct||card.cardmarketIdProduct||null});
     sources=sources.filter(s=>s.name!=="Cardmarket");
     if(directCm && Number.isFinite(directCm.value) && directCm.value>0) sources.unshift(directCm);
     const total=(full.set&&full.set.cardCount&&(full.set.cardCount.official||full.set.cardCount.total))||"";
-    const updatedCard={...card,catalogId:full.id||candidate.id,set:(full.set&&full.set.name)||card.set,setCode:(full.set&&full.set.id)||card.setCode,number:total?(full.localId+"/"+total):(full.localId||card.number),rarity:full.rarity||card.rarity,image:tcgdexImage(full.image)||card.image,catalogVerified:true,sources,updated:latestPriceUpdate(sources)};
+    const updatedCard={...card,catalogId:full.id||candidate.id,cardmarketIdProduct:full?.pricing?.cardmarket?.idProduct||card.cardmarketIdProduct||null,set:(full.set&&full.set.name)||card.set,setCode:(full.set&&full.set.id)||card.setCode,number:total?(full.localId+"/"+total):(full.localId||card.number),rarity:full.rarity||card.rarity,image:tcgdexImage(full.image)||card.image,catalogVerified:true,sources,updated:latestPriceUpdate(sources)};
     const idx=collection.findIndex(x=>x.id===card.id);
     if(idx>=0){collection[idx]=updatedCard;try{localStorage.setItem("have_collection",JSON.stringify(collection))}catch(e){} renderAll();}
     return updatedCard;
