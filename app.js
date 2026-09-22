@@ -228,14 +228,24 @@ async function searchCatalog(recognition=null){
     if(!res.ok) throw new Error("Catalogo non disponibile");
     const cards=await res.json();
     let list=Array.isArray(cards)?cards.slice(0,40):[];
-    if(recognition&&recognition.number){
-      const wanted=String(recognition.number).split("/")[0].replace(/^0+/,"");
-      const exact=list.filter(c=>String(c.localId||"").replace(/^0+/,"")===wanted);
+    let exact=[];
+    if(recognition){
+      const rawNumbers=[
+        ...(Array.isArray(recognition.number_candidates)?recognition.number_candidates:[]),
+        recognition.number
+      ].filter(Boolean);
+      const wantedNumbers=[...new Set(rawNumbers.map(n=>String(n).split("/")[0].replace(/^0+/,"")))];
+      exact=list.filter(c=>wantedNumbers.includes(String(c.localId||"").replace(/^0+/,"")));
       if(exact.length) list=[...exact,...list.filter(c=>!exact.includes(c))];
     }
     list=list.slice(0,20);
     if(!list.length){catalogResults.innerHTML='<div class="catalog-status">Nessuna carta trovata.</div>';return;}
-    catalogResults.innerHTML=list.map(c=>'<button class="catalog-card" type="button" data-catalog-id="'+c.id+'"><img src="'+tcgdexImage(c.image)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'"><div><strong>'+(c.name||"Carta Pokémon")+'</strong><div class="meta">Numero '+(c.localId||"—")+'</div><div class="catalog-id">'+c.id+'</div></div><span>›</span></button>').join("");
+    if(recognition && exact.length===1){
+      catalogResults.innerHTML='<div class="catalog-status success">Corrispondenza esatta trovata. Carico la carta…</div>';
+      await loadCatalogCard(exact[0].id);
+      return;
+    }
+    catalogResults.innerHTML=list.map(c=>'<button class="catalog-card" type="button" data-catalog-id="'+c.id+'"><img src="'+tcgdexImage(c.image)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'"><div><strong>'+(c.name||"Carta Pokémon")+'</strong><div class="meta">Numero '+(c.localId||"—")+'</div><div class="catalog-id">Codice catalogo '+c.id+'</div></div><span>›</span></button>').join("");
     catalogResults.querySelectorAll("[data-catalog-id]").forEach(btn=>btn.addEventListener("click",()=>loadCatalogCard(btn.dataset.catalogId)));
   }catch(err){catalogResults.innerHTML='<div class="catalog-status error">Non riesco a collegarmi al catalogo. Riprova.</div>';}
 }
@@ -250,7 +260,7 @@ async function loadCatalogCard(id){
     const r=lastRecognition||{};
     const variantParts=[r.finish,r.variant,r.stamp,r.stamp_text,r.edition,r.promo].filter(Boolean);
     selectedCatalogCard={
-      id:"tcgdex-"+c.id,
+      id:"tcgdex-"+c.id+"-"+Date.now(),
       catalogId:c.id,
       name:c.name||r.name||"Carta Pokémon",
       set:(c.set&&c.set.name)||r.set||"Set sconosciuto",
@@ -275,7 +285,7 @@ async function loadCatalogCard(id){
     detected=[selectedCatalogCard];
     document.getElementById("detectedCards").innerHTML=realCardRow(selectedCatalogCard);
     document.getElementById("addDetected").classList.remove("hidden");
-    catalogResults.innerHTML='<div class="catalog-status success">Carta selezionata dal catalogo reale.</div>';
+    catalogResults.innerHTML='<div class="catalog-status success">Carta verificata nel catalogo. Ora puoi aggiungerla alla collezione.</div>';
     bindCardClicks();
     document.getElementById("detectedCards").scrollIntoView({behavior:"smooth",block:"center"});
   }catch(err){catalogResults.innerHTML='<div class="catalog-status error">Non riesco a caricare questa carta.</div>';}
@@ -283,7 +293,7 @@ async function loadCatalogCard(id){
 
 function realCardRow(c){
   const art=c.image?'<img class="card-thumb real-thumb" src="'+c.image+'" alt="'+c.name+'" onerror="this.style.display=\'none\'">':'<div class="card-thumb">🃏</div>';
-  return '<button class="card-row" data-card="'+c.id+'" style="width:100%;text-align:left;border-style:solid">'+art+'<div><div class="card-name">'+c.name+'</div><div class="meta">'+c.set+' • '+c.number+'</div><div class="meta">'+c.language+' • '+c.rarity+'</div><div class="meta">'+(c.variant||"Variante da confermare")+'</div><span class="pill">CATALOGO REALE</span></div><div class="price"><span class="meta">Prezzo<br>da collegare</span></div></button>';
+  return '<button class="card-row" data-card="'+c.id+'" style="width:100%;text-align:left;border-style:solid">'+art+'<div><div class="card-name">'+c.name+'</div><div class="meta">'+c.set+' • '+c.number+'</div><div class="meta">Codice espansione: '+(c.setCode||"—")+'</div><div class="meta">'+c.language+' • '+c.rarity+'</div><div class="meta">'+(c.variant||"Variante da confermare")+'</div><span class="pill">CATALOGO REALE</span></div><div class="price"><span class="meta">Prezzo<br>da collegare</span></div></button>';
 }
 
 catalogSearchBtn.addEventListener("click",searchCatalog);
