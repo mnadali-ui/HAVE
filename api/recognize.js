@@ -14,12 +14,20 @@ export default async function handler(req,res){
   }
 
   const prompt=[
-    "You identify Pokemon trading cards from photos.",
-    "Return ONLY valid JSON with keys:",
-    "name, set, number, language, variant, rarity, confidence, notes.",
-    "Use null when uncertain. confidence is a number from 0 to 1.",
-    "Read the collector number carefully from the bottom of the card.",
-    "Do not guess a set if the visible evidence is insufficient."
+    "You are the recognition engine for HAVE, an app that identifies exact Pokemon TCG card variants from photos.",
+    "Inspect the full visible card, especially the collector number, set symbol, copyright line, foil treatment and any printed stamp/logo.",
+    "Return ONLY valid JSON with these keys:",
+    "name, set, number, language, rarity, finish, variant, stamp, stamp_text, edition, promo, special_markings, confidence, notes.",
+    "language should be the printed card language when visible, for example ITA, ENG, JPN, FRA, DEU, ESP, KOR, CHN.",
+    "finish should distinguish normal, holo, reverse holo, cosmos holo, cracked ice, foil or other visible treatment when possible.",
+    "stamp must describe a special printed stamp/logo if present, such as League, Regional, Championship, Prerelease, STAFF, Pokemon Center, event, store or other mark.",
+    "stamp_text should transcribe visible special logo/stamp text when possible.",
+    "edition should capture 1st Edition, unlimited or other edition markers when visible.",
+    "promo must identify promo status or promo numbering when visible.",
+    "special_markings should be an array of any other distinctive printed marks.",
+    "Use null when uncertain and never invent a stamp, set, language or variant.",
+    "confidence is a number from 0 to 1 for the exact variant, not just the Pokemon name.",
+    "Read the collector number very carefully."
   ].join(" ");
 
   try{
@@ -30,7 +38,7 @@ export default async function handler(req,res){
         "Content-Type":"application/json"
       },
       body:JSON.stringify({
-        model:"gpt-5-mini",
+        model:"gpt-5.6-luna",
         input:[{
           role:"user",
           content:[
