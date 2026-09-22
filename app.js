@@ -247,16 +247,66 @@ analyzeCardBtn.addEventListener("click",async()=>{
 
 function tcgdexImage(url){ return url ? url + "/high.webp" : ""; }
 
+function tcgdexPriceValue(v, unit){
+  if(!Number.isFinite(Number(v))) return null;
+  const n=Number(v), u=Number(unit);
+  if(Number.isFinite(u) && u>1) return n/u;
+  return n;
+}
+function priceSourcesFromTcgdex(c, recognition=null){
+  const sources=[];
+  const p=c&&c.pricing?c.pricing:{};
+  const cm=p.cardmarket||null;
+  const tp=p.tcgplayer||null;
+  const finish=String((recognition&&recognition.finish)||"").toLowerCase();
+  const wantsHolo=/holo|foil|textured/.test(finish);
+
+  if(cm){
+    const unit=cm.unit;
+    const raw=wantsHolo
+      ? (cm["trend-holo"] ?? cm["avg7-holo"] ?? cm["avg-holo"] ?? cm["low-holo"])
+      : (cm.trend ?? cm.avg7 ?? cm.avg ?? cm.low);
+    const value=tcgdexPriceValue(raw,unit);
+    if(Number.isFinite(value)) sources.push({name:"Cardmarket",value,updated:cm.updated||null});
+  }
+
+  if(tp){
+    const unit=tp.unit;
+    const variant=wantsHolo
+      ? (tp.holofoil || tp["reverse-holofoil"] || tp["1st-edition-holofoil"] || tp["unlimited-holofoil"])
+      : (tp.normal || tp.unlimited || tp["1st-edition"]);
+    if(variant){
+      const raw=variant.marketPrice ?? variant.midPrice ?? variant.lowPrice;
+      const value=tcgdexPriceValue(raw,unit);
+      if(Number.isFinite(value)) sources.push({name:"TCGplayer",value,updated:tp.updated||null});
+    }
+  }
+  return sources;
+}
+function latestPriceUpdate(sources){
+  const ts=sources.map(s=>Number(s.updated)).filter(Number.isFinite);
+  if(!ts.length) return "Prezzi live";
+  const max=Math.max(...ts);
+  const ms=max<1e12?max*1000:max;
+  try{return new Intl.DateTimeFormat("it-IT",{dateStyle:"short",timeStyle:"short"}).format(new Date(ms));}
+  catch(e){return "Prezzi live";}
+}
+
 async function searchCatalog(recognition=null){
   const q=(recognition&&recognition.name?recognition.name:catalogQuery.value).trim();
   if(q.length<2){catalogResults.innerHTML='<div class="catalog-status">Scrivi almeno 2 caratteri.</div>';return;}
   catalogResults.innerHTML='<div class="catalog-status">Ricerca nel catalogo…</div>';
   try{
-    const url="https://api.tcgdex.net/v2/it/cards?name="+encodeURIComponent(q)+"&pagination:itemsPerPage=20";
-    const res=await fetch(url,{headers:{"Accept":"application/json"}});
-    if(!res.ok) throw new Error("Catalogo non disponibile");
-    const cards=await res.json();
-    let list=Array.isArray(cards)?cards.slice(0,40):[];
+    async function fetchCatalog(locale){
+      const url="https://api.tcgdex.net/v2/"+locale+"/cards?name="+encodeURIComponent(q)+"&pagination:itemsPerPage=40";
+      const res=await fetch(url,{headers:{"Accept":"application/json"}});
+      if(!res.ok) return [];
+      const cards=await res.json();
+      return Array.isArray(cards)?cards.map(c=>({...c,_locale:locale})):[];
+    }
+    let list=await fetchCatalog("it");
+    if(!list.length) list=await fetchCatalog("en");
+    list=list.slice(0,40);
     let exact=[];
     if(recognition){
       const rawNumbers=[
@@ -274,20 +324,23 @@ async function searchCatalog(recognition=null){
     }
     if(recognition && exact.length===1){
       catalogResults.innerHTML='<div class="catalog-status success">Corrispondenza esatta trovata. Carico la carta…</div>';
-      await loadCatalogCard(exact[0].id);
+      await loadCatalogCard(exact[0].id,exact[0]._locale||"it");
       return;
     }
-    catalogResults.innerHTML=list.map(c=>'<button class="catalog-card" type="button" data-catalog-id="'+c.id+'"><img src="'+tcgdexImage(c.image)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'"><div><strong>'+(c.name||"Carta Pokémon")+'</strong><div class="meta">Numero '+(c.localId||"—")+'</div><div class="catalog-id">Codice catalogo '+c.id+'</div></div><span>›</span></button>').join("");
-    catalogResults.querySelectorAll("[data-catalog-id]").forEach(btn=>btn.addEventListener("click",()=>loadCatalogCard(btn.dataset.catalogId)));
+    catalogResults.innerHTML=list.map(c=>'<button class="catalog-card" type="button" data-catalog-id="'+c.id+'" data-catalog-locale="'+(c._locale||"it")+'"><img src="'+tcgdexImage(c.image)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'"><div><strong>'+(c.name||"Carta Pokémon")+'</strong><div class="meta">Numero '+(c.localId||"—")+'</div><div class="catalog-id">Codice catalogo '+c.id+'</div></div><span>›</span></button>').join("");
+    catalogResults.querySelectorAll("[data-catalog-id]").forEach(btn=>btn.addEventListener("click",()=>loadCatalogCard(btn.dataset.catalogId,btn.dataset.catalogLocale||"it")));
   }catch(err){catalogResults.innerHTML='<div class="catalog-status error">Non riesco a collegarmi al catalogo. Riprova.</div>';}
 }
 
-async function loadCatalogCard(id){
-  catalogResults.innerHTML='<div class="catalog-status">Carico i dettagli…</div>';
+async function loadCatalogCard(id,locale="it"){
+  catalogResults.innerHTML='<div class="catalog-status">Carico carta e prezzi…</div>';
   try{
-    const res=await fetch("https://api.tcgdex.net/v2/it/cards/"+encodeURIComponent(id));
+    let res=await fetch("https://api.tcgdex.net/v2/"+locale+"/cards/"+encodeURIComponent(id));
+    if(!res.ok && locale!=="en") res=await fetch("https://api.tcgdex.net/v2/en/cards/"+encodeURIComponent(id));
     if(!res.ok) throw new Error("Carta non disponibile");
     const c=await res.json();
+    const sources=priceSourcesFromTcgdex(c,lastRecognition);
+    const priceUpdated=latestPriceUpdate(sources);
     const total=(c.set&&c.set.cardCount&&(c.set.cardCount.official||c.set.cardCount.total))||"";
     const r=lastRecognition||{};
     const variantParts=[r.finish,r.variant,r.stamp,r.stamp_text,r.edition,r.promo].filter(Boolean);
@@ -310,10 +363,10 @@ async function loadCatalogCard(id){
       status:"keep",
       emoji:"🃏",
       image:tcgdexImage(c.image),
-      sources:[],
+      sources,
       recognitionConfidence:Number(r.confidence)||null,
       catalogVerified:true,
-      updated:"Catalogo live"
+      updated:priceUpdated
     };
     detected=[selectedCatalogCard];
     document.getElementById("detectedCards").innerHTML=realCardRow(selectedCatalogCard);
@@ -326,7 +379,7 @@ async function loadCatalogCard(id){
 
 function realCardRow(c){
   const art=c.image?'<img class="card-thumb real-thumb" src="'+c.image+'" alt="'+c.name+'" onerror="this.style.display=\'none\'">':'<div class="card-thumb">🃏</div>';
-  return '<button class="card-row" data-card="'+c.id+'" style="width:100%;text-align:left;border-style:solid">'+art+'<div><div class="card-name">'+c.name+'</div><div class="meta">'+c.set+' • '+c.number+'</div><div class="meta">Codice espansione: '+(c.setCode||"—")+'</div><div class="meta">'+c.language+' • '+c.rarity+'</div><div class="meta">'+(c.variant||"Variante da confermare")+'</div><span class="pill">'+(c.catalogVerified===false?"DA VERIFICARE":"CATALOGO REALE")+'</span></div><div class="price"><span class="meta">Prezzo<br>da collegare</span></div></button>';
+  return '<button class="card-row" data-card="'+c.id+'" style="width:100%;text-align:left;border-style:solid">'+art+'<div><div class="card-name">'+c.name+'</div><div class="meta">'+c.set+' • '+c.number+'</div><div class="meta">Codice espansione: '+(c.setCode||"—")+'</div><div class="meta">'+c.language+' • '+c.rarity+'</div><div class="meta">'+(c.variant||"Variante da confermare")+'</div><span class="pill">'+(c.catalogVerified===false?"DA VERIFICARE":"CATALOGO REALE")+'</span></div><div class="price">'+((c.sources&&c.sources.length)?euro(robustEstimate(c.sources))+'<div class="meta">Stima HAVE</div>':'<span class="meta">Prezzo<br>da verificare</span>')+'</div></button>';
 }
 
 catalogSearchBtn.addEventListener("click",searchCatalog);
