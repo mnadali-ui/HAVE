@@ -229,8 +229,7 @@ analyzeCardBtn.addEventListener("click",async()=>{
     };
     detected=[provisional];
     document.getElementById("detectedCards").innerHTML=realCardRow(provisional);
-    document.getElementById("addDetected").classList.remove("hidden");
-    bindCardClicks();
+    document.getElementById("addDetected").classList.add("hidden");
     const confidence=Math.round((Number(r.confidence)||0)*100);
     const details=[r.language,r.finish,r.stamp||r.stamp_text,r.edition,r.promo].filter(Boolean).join(" • ");
     notice.textContent="Riconoscimento: "+(r.name||"carta non certa")+(r.number?" • "+r.number:"")+(confidence?" • "+confidence+"%":"")+(details?"\n"+details:"")+". Verifico nel catalogo Pokémon…";
@@ -360,6 +359,8 @@ async function searchCatalog(recognition=null){
     list=list.slice(0,20);
     if(!list.length){
       catalogResults.innerHTML='<div class="catalog-status">Nessuna corrispondenza nel catalogo. Puoi comunque aggiungere la carta riconosciuta e verificarla dopo.</div>';
+      document.getElementById("addDetected").classList.remove("hidden");
+      bindCardClicks();
       return;
     }
     if(recognition && exact.length===1){
@@ -369,6 +370,8 @@ async function searchCatalog(recognition=null){
     }
     catalogResults.innerHTML=list.map(c=>'<button class="catalog-card" type="button" data-catalog-id="'+c.id+'" data-catalog-locale="'+(c._locale||"it")+'"><img src="'+tcgdexImage(c.image)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'"><div><strong>'+(c.name||"Carta Pokémon")+'</strong><div class="meta">Numero '+(c.localId||"—")+'</div><div class="catalog-id">Codice catalogo '+c.id+'</div></div><span>›</span></button>').join("");
     catalogResults.querySelectorAll("[data-catalog-id]").forEach(btn=>btn.addEventListener("click",()=>loadCatalogCard(btn.dataset.catalogId,btn.dataset.catalogLocale||"it")));
+    document.getElementById("addDetected").classList.remove("hidden");
+    bindCardClicks();
   }catch(err){catalogResults.innerHTML='<div class="catalog-status error">Non riesco a collegarmi al catalogo. Riprova.</div>';}
 }
 
@@ -458,7 +461,11 @@ async function loadCatalogCard(id,locale="it"){
     catalogResults.innerHTML='<div class="catalog-status success">Carta verificata nel catalogo. Ora puoi aggiungerla alla collezione.</div>';
     bindCardClicks();
     document.getElementById("detectedCards").scrollIntoView({behavior:"smooth",block:"center"});
-  }catch(err){catalogResults.innerHTML='<div class="catalog-status error">Non riesco a caricare questa carta.</div>';}
+  }catch(err){
+    catalogResults.innerHTML='<div class="catalog-status error">Non riesco a caricare questa carta. Puoi aggiungerla come DA VERIFICARE.</div>';
+    document.getElementById("addDetected").classList.remove("hidden");
+    if(detected[0]) detected[0].catalogVerified=false;
+  }
 }
 
 async function enrichSavedCardPrices(card){
@@ -500,7 +507,8 @@ async function enrichSavedCardPrices(card){
 }
 function realCardRow(c){
   const art=c.image?'<img class="card-thumb real-thumb" src="'+c.image+'" alt="'+c.name+'" onerror="this.style.display=\'none\'">':'<div class="card-thumb">🃏</div>';
-  return '<button class="card-row" data-card="'+c.id+'" style="width:100%;text-align:left;border-style:solid">'+art+'<div><div class="card-name">'+c.name+'</div><div class="meta">'+c.set+' • '+c.number+'</div><div class="meta">Codice espansione: '+(c.setCode||"—")+'</div><div class="meta">'+c.language+' • '+c.rarity+'</div><div class="meta">'+(c.variant||"Variante da confermare")+'</div><span class="pill">'+(c.catalogVerified===false?"DA VERIFICARE":"CATALOGO REALE")+'</span></div><div class="price">'+((c.sources&&c.sources.length)?euro(robustEstimate(c.sources))+'<div class="meta">Stima HAVE</div>':'<span class="meta">Prezzo<br>da verificare</span>')+'</div></button>';
+  const pending=c.catalogVerified===false;
+  return '<button class="card-row" '+(pending?'disabled aria-disabled="true"':'data-card="'+c.id+'"')+' style="width:100%;text-align:left;border-style:solid;'+(pending?'opacity:.82;cursor:default;':'')+'">'+art+'<div><div class="card-name">'+c.name+'</div><div class="meta">'+c.set+' • '+c.number+'</div><div class="meta">Codice espansione: '+(c.setCode||"—")+'</div><div class="meta">'+c.language+' • '+c.rarity+'</div><div class="meta">'+(c.variant||"Variante da confermare")+'</div><span class="pill">'+(c.catalogVerified===false?"DA VERIFICARE":"CATALOGO REALE")+'</span></div><div class="price">'+((c.sources&&c.sources.length)?euro(robustEstimate(c.sources))+'<div class="meta">Stima HAVE</div>':'<span class="meta">Prezzo<br>da verificare</span>')+'</div></button>';
 }
 
 catalogSearchBtn.addEventListener("click",searchCatalog);
