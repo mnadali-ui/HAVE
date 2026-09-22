@@ -22,7 +22,7 @@ export default async function handler(req,res){
     "If a special symbol or stamp is visible but you cannot identify it confidently, report that a special marking is present instead of silently treating the card as a normal version.",
     "Do not infer a normal version when the image may contain a special printing.",
     "Return ONLY valid JSON with exactly these keys:",
-    "name, set, number, language, rarity, finish, variant, stamp, stamp_text, edition, promo, special_markings, confidence, exact_variant_confidence, needs_confirmation, confirmation_reason, notes.",
+    "name, set, number, number_candidates, language, rarity, finish, variant, stamp, stamp_text, edition, promo, special_markings, confidence, exact_variant_confidence, needs_confirmation, confirmation_reason, notes.",
     "language must represent the printed language on the card when visible, using codes such as ITA, ENG, JPN, FRA, DEU, ESP, KOR, CHN.",
     "finish should distinguish normal, holo, reverse holo, cosmos holo, cracked ice, foil, textured foil or another visible treatment when possible.",
     "stamp should identify the type of special stamp/logo when possible.",
@@ -36,7 +36,8 @@ export default async function handler(req,res){
     "confirmation_reason must briefly state what the user should verify when needs_confirmation is true.",
     "Use null when a field cannot be determined from visible evidence.",
     "Never invent a set, number, language, stamp, finish, promo status or variant.",
-    "Read the collector number and any tiny stamp text very carefully.",
+    "Read the collector number with extreme care. Inspect each digit separately, especially similar digits such as 1/7, 3/8, 5/6 and 8/9. Preserve the printed format such as 179/132. If one or more digits are not clearly legible, do NOT guess: set number to null and return up to three plausible readings in number_candidates. number_candidates must be an array of strings. If number is clear, number_candidates should contain that same reading only.",
+    "Read any tiny stamp text very carefully.",
     "A high confidence score is allowed only when the visible details support the exact variant, not just the Pokemon name."
   ].join(" ");
 
