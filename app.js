@@ -202,6 +202,35 @@ analyzeCardBtn.addEventListener("click",async()=>{
     if(!res.ok) throw new Error(data.error||"Servizio di riconoscimento non disponibile");
     const r=data.recognition||{};
     lastRecognition=r;
+    const provisionalVariant=[r.finish,r.variant,r.stamp,r.stamp_text,r.edition,r.promo].filter(Boolean).join(" • ")||"Da verificare";
+    const provisional={
+      id:"vision-"+Date.now(),
+      name:r.name||"Carta Pokémon",
+      set:r.set||"Espansione da verificare",
+      setCode:r.set_code||"",
+      number:r.number||((r.number_candidates&&r.number_candidates[0])||"—"),
+      rarity:r.rarity||"—",
+      language:r.language||"Da confermare",
+      finish:r.finish||null,
+      stamp:r.stamp||null,
+      stampText:r.stamp_text||null,
+      edition:r.edition||null,
+      promo:r.promo||null,
+      specialMarkings:r.special_markings||[],
+      variant:provisionalVariant,
+      status:"keep",
+      emoji:"🃏",
+      image:currentImageDataUrl||"",
+      sources:[],
+      recognitionConfidence:Number(r.confidence)||null,
+      exactVariantConfidence:Number(r.exact_variant_confidence)||null,
+      catalogVerified:false,
+      updated:"Riconoscimento visivo"
+    };
+    detected=[provisional];
+    document.getElementById("detectedCards").innerHTML=realCardRow(provisional);
+    document.getElementById("addDetected").classList.remove("hidden");
+    bindCardClicks();
     const confidence=Math.round((Number(r.confidence)||0)*100);
     const details=[r.language,r.finish,r.stamp||r.stamp_text,r.edition,r.promo].filter(Boolean).join(" • ");
     notice.textContent="Riconoscimento: "+(r.name||"carta non certa")+(r.number?" • "+r.number:"")+(confidence?" • "+confidence+"%":"")+(details?"\n"+details:"")+". Verifico nel catalogo Pokémon…";
@@ -239,7 +268,10 @@ async function searchCatalog(recognition=null){
       if(exact.length) list=[...exact,...list.filter(c=>!exact.includes(c))];
     }
     list=list.slice(0,20);
-    if(!list.length){catalogResults.innerHTML='<div class="catalog-status">Nessuna carta trovata.</div>';return;}
+    if(!list.length){
+      catalogResults.innerHTML='<div class="catalog-status">Nessuna corrispondenza nel catalogo. Puoi comunque aggiungere la carta riconosciuta e verificarla dopo.</div>';
+      return;
+    }
     if(recognition && exact.length===1){
       catalogResults.innerHTML='<div class="catalog-status success">Corrispondenza esatta trovata. Carico la carta…</div>';
       await loadCatalogCard(exact[0].id);
@@ -280,6 +312,7 @@ async function loadCatalogCard(id){
       image:tcgdexImage(c.image),
       sources:[],
       recognitionConfidence:Number(r.confidence)||null,
+      catalogVerified:true,
       updated:"Catalogo live"
     };
     detected=[selectedCatalogCard];
@@ -293,7 +326,7 @@ async function loadCatalogCard(id){
 
 function realCardRow(c){
   const art=c.image?'<img class="card-thumb real-thumb" src="'+c.image+'" alt="'+c.name+'" onerror="this.style.display=\'none\'">':'<div class="card-thumb">🃏</div>';
-  return '<button class="card-row" data-card="'+c.id+'" style="width:100%;text-align:left;border-style:solid">'+art+'<div><div class="card-name">'+c.name+'</div><div class="meta">'+c.set+' • '+c.number+'</div><div class="meta">Codice espansione: '+(c.setCode||"—")+'</div><div class="meta">'+c.language+' • '+c.rarity+'</div><div class="meta">'+(c.variant||"Variante da confermare")+'</div><span class="pill">CATALOGO REALE</span></div><div class="price"><span class="meta">Prezzo<br>da collegare</span></div></button>';
+  return '<button class="card-row" data-card="'+c.id+'" style="width:100%;text-align:left;border-style:solid">'+art+'<div><div class="card-name">'+c.name+'</div><div class="meta">'+c.set+' • '+c.number+'</div><div class="meta">Codice espansione: '+(c.setCode||"—")+'</div><div class="meta">'+c.language+' • '+c.rarity+'</div><div class="meta">'+(c.variant||"Variante da confermare")+'</div><span class="pill">'+(c.catalogVerified===false?"DA VERIFICARE":"CATALOGO REALE")+'</span></div><div class="price"><span class="meta">Prezzo<br>da collegare</span></div></button>';
 }
 
 catalogSearchBtn.addEventListener("click",searchCatalog);
