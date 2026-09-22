@@ -81,8 +81,63 @@ function handlePhoto(file){
   };
   reader.readAsDataURL(file)
 }
-document.getElementById("cameraInput").addEventListener("change",e=>handlePhoto(e.target.files[0]));
-document.getElementById("galleryInput").addEventListener("change",e=>handlePhoto(e.target.files[0]));
+const cameraInput=document.getElementById("cameraInput");
+const galleryInput=document.getElementById("galleryInput");
+const openCameraBtn=document.getElementById("openCameraBtn");
+const cameraPanel=document.getElementById("cameraPanel");
+const cameraVideo=document.getElementById("cameraVideo");
+const cameraCanvas=document.getElementById("cameraCanvas");
+const takePhotoBtn=document.getElementById("takePhotoBtn");
+const closeCameraBtn=document.getElementById("closeCameraBtn");
+const cameraMessage=document.getElementById("cameraMessage");
+let cameraStream=null;
+
+function showCameraMessage(text){
+  cameraMessage.textContent=text;
+  cameraMessage.classList.remove("hidden");
+}
+function stopCamera(){
+  if(cameraStream){cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null}
+  cameraVideo.srcObject=null;
+  cameraPanel.classList.add("hidden");
+}
+async function openLiveCamera(){
+  cameraMessage.classList.add("hidden");
+  if(!navigator.mediaDevices?.getUserMedia){
+    cameraInput.click();
+    return;
+  }
+  try{
+    cameraStream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:{ideal:"environment"}},
+      audio:false
+    });
+    cameraVideo.srcObject=cameraStream;
+    cameraPanel.classList.remove("hidden");
+    await cameraVideo.play();
+  }catch(err){
+    showCameraMessage("Non riesco ad aprire la fotocamera direttamente. Provo con la fotocamera di iPhone.");
+    cameraInput.click();
+  }
+}
+openCameraBtn.addEventListener("click",openLiveCamera);
+takePhotoBtn.addEventListener("click",()=>{
+  if(!cameraVideo.videoWidth){showCameraMessage("La fotocamera non è ancora pronta.");return}
+  cameraCanvas.width=cameraVideo.videoWidth;
+  cameraCanvas.height=cameraVideo.videoHeight;
+  const ctx=cameraCanvas.getContext("2d");
+  ctx.drawImage(cameraVideo,0,0,cameraCanvas.width,cameraCanvas.height);
+  cameraCanvas.toBlob(blob=>{
+    if(!blob)return;
+    const file=new File([blob],"have-scan.jpg",{type:"image/jpeg"});
+    stopCamera();
+    handlePhoto(file);
+  },"image/jpeg",0.92);
+});
+closeCameraBtn.addEventListener("click",stopCamera);
+cameraInput.addEventListener("change",e=>handlePhoto(e.target.files[0]));
+galleryInput.addEventListener("change",e=>handlePhoto(e.target.files[0]));
+document.addEventListener("visibilitychange",()=>{if(document.hidden&&cameraStream)stopCamera()});
 document.getElementById("addDetected").onclick=()=>{
   const existing=new Set(collection.map(c=>c.id));
   collection=[...collection,...detected.filter(c=>!existing.has(c.id))];
