@@ -56,31 +56,44 @@
         <div id="homeCards" class="cards-list"></div>
       </section>
 
-      <section class="view" id="scanView">
-        <div class="section-title"><h2>Scansiona pagina</h2></div>
-        <div class="scan-box">
-          <div class="scan-icon">▦</div>
-          <h3>Fotografa una pagina del raccoglitore</h3>
-          <p>L'app rileverà le carte e ti farà confermare set, numero e variante.</p>
-          <button class="cta" id="openCameraBtn" type="button">Apri fotocamera</button>
-          <input id="cameraInput" class="native-file-input" type="file" accept="image/*" capture="environment" />
-          <label class="secondary-cta">
-            Scegli una foto
-            <input id="galleryInput" type="file" accept="image/*" hidden />
-          </label>
-          <div id="cameraPanel" class="camera-panel hidden">
-            <video id="cameraVideo" playsinline autoplay muted></video>
-            <div class="camera-actions">
-              <button class="cta" id="takePhotoBtn" type="button">Scatta foto</button>
-              <button class="secondary-cta" id="closeCameraBtn" type="button">Chiudi</button>
-            </div>
-            <canvas id="cameraCanvas" class="hidden"></canvas>
+      <section class="view scan-view" id="scanView">
+        <div class="scan-header">
+          <div>
+            <div class="eyebrow dark">SCANNER HAVE</div>
+            <h2>Inquadra la carta</h2>
           </div>
-          <div id="cameraMessage" class="camera-message hidden"></div>
+          <button class="camera-close-top" id="scanCloseBtn" type="button">✕</button>
         </div>
+
+        <div id="cameraPanel" class="camera-panel scan-live">
+          <video id="cameraVideo" playsinline autoplay muted></video>
+          <div class="camera-guide"><span></span></div>
+          <div class="camera-bottom">
+            <label class="gallery-mini" aria-label="Scegli una foto">
+              ▣
+              <input id="galleryInput" type="file" accept="image/*" hidden />
+            </label>
+            <button class="shutter" id="takePhotoBtn" type="button" aria-label="Scatta foto"><span></span></button>
+            <button class="flip-placeholder" type="button" aria-label="Fotocamera posteriore">⌁</button>
+          </div>
+          <canvas id="cameraCanvas" class="hidden"></canvas>
+        </div>
+
+        <div id="cameraFallback" class="camera-fallback hidden">
+          <p>La fotocamera non si è aperta automaticamente.</p>
+          <button class="cta full" id="openCameraBtn" type="button">Apri fotocamera</button>
+          <input id="cameraInput" class="native-file-input" type="file" accept="image/*" capture="environment" />
+        </div>
+        <div id="cameraMessage" class="camera-message hidden"></div>
+
         <div id="scanResult" class="scan-result hidden">
-          <img id="scanPreview" alt="Anteprima pagina" />
-          <div class="notice">Riconoscimento demo: 9 carte rilevate. Nella fase successiva collegheremo il riconoscimento reale.</div>
+          <div class="result-head">
+            <strong>Foto acquisita</strong>
+            <button class="text-btn" id="retakeBtn" type="button">Rifai</button>
+          </div>
+          <img id="scanPreview" alt="Anteprima carta" />
+          <button class="cta full analyze-btn" id="analyzeCardBtn" type="button">Riconosci carta</button>
+          <div class="notice" id="recognitionNotice">Per ora il riconoscimento è demo. Stiamo collegando il motore reale.</div>
           <div id="detectedCards" class="cards-list"></div>
           <button class="cta full" id="addDetected">Aggiungi alla collezione</button>
         </div>
