@@ -62,14 +62,21 @@
           <div class="scan-icon">▦</div>
           <h3>Fotografa una pagina del raccoglitore</h3>
           <p>L'app rileverà le carte e ti farà confermare set, numero e variante.</p>
-          <label class="cta">
-            Apri fotocamera
-            <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
-          </label>
+          <button class="cta" id="openCameraBtn" type="button">Apri fotocamera</button>
+          <input id="cameraInput" class="native-file-input" type="file" accept="image/*" capture="environment" />
           <label class="secondary-cta">
             Scegli una foto
             <input id="galleryInput" type="file" accept="image/*" hidden />
           </label>
+          <div id="cameraPanel" class="camera-panel hidden">
+            <video id="cameraVideo" playsinline autoplay muted></video>
+            <div class="camera-actions">
+              <button class="cta" id="takePhotoBtn" type="button">Scatta foto</button>
+              <button class="secondary-cta" id="closeCameraBtn" type="button">Chiudi</button>
+            </div>
+            <canvas id="cameraCanvas" class="hidden"></canvas>
+          </div>
+          <div id="cameraMessage" class="camera-message hidden"></div>
         </div>
         <div id="scanResult" class="scan-result hidden">
           <img id="scanPreview" alt="Anteprima pagina" />
