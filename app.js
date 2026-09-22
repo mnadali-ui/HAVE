@@ -372,6 +372,41 @@ async function searchCatalog(recognition=null){
   }catch(err){catalogResults.innerHTML='<div class="catalog-status error">Non riesco a collegarmi al catalogo. Riprova.</div>';}
 }
 
+async function fetchDirectCardmarketPrice(card){
+  try{
+    const res=await fetch(HAVE_API_BASE+"/api/cardmarket-price",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        name:card.name,
+        number:card.number,
+        set:card.set,
+        setCode:card.setCode,
+        finish:card.finish
+      })
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok || !data.match) return null;
+    return {
+      name:"Cardmarket",
+      value:Number(data.match.value),
+      currency:"EUR",
+      originalValue:Number(data.match.value),
+      originalCurrency:"EUR",
+      updated:data.match.createdAt||null,
+      details:{
+        trend:data.match.trend,
+        avg7:data.match.avg7,
+        avg30:data.match.avg30,
+        low:data.match.low,
+        idProduct:data.match.idProduct
+      }
+    };
+  }catch(e){
+    return null;
+  }
+}
+
 async function loadCatalogCard(id,locale="it"){
   catalogResults.innerHTML='<div class="catalog-status">Carico carta e prezzi…</div>';
   try{
@@ -379,7 +414,16 @@ async function loadCatalogCard(id,locale="it"){
     if(!res.ok && locale!=="en") res=await fetch("https://api.tcgdex.net/v2/en/cards/"+encodeURIComponent(id));
     if(!res.ok) throw new Error("Carta non disponibile");
     const c=await res.json();
-    const sources=await priceSourcesFromTcgdex(c,lastRecognition);
+    let sources=await priceSourcesFromTcgdex(c,lastRecognition);
+    const directCm=await fetchDirectCardmarketPrice({
+      name:c.name||lastRecognition?.name,
+      number:(c.localId||lastRecognition?.number||""),
+      set:(c.set&&c.set.name)||lastRecognition?.set,
+      setCode:(c.set&&c.set.id)||lastRecognition?.set_code,
+      finish:lastRecognition?.finish
+    });
+    sources=sources.filter(s=>s.name!=="Cardmarket");
+    if(directCm && Number.isFinite(directCm.value) && directCm.value>0) sources.unshift(directCm);
     const priceUpdated=latestPriceUpdate(sources);
     const total=(c.set&&c.set.cardCount&&(c.set.cardCount.official||c.set.cardCount.total))||"";
     const r=lastRecognition||{};
