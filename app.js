@@ -120,7 +120,7 @@ const catalogResults=document.getElementById("catalogResults");
 let cameraStream=null;
 let selectedCatalogCard=null;
 let currentImageDataUrl=null;
-const HAVE_API_BASE=(window.HAVE_API_BASE||"").replace(/\/$/,"");
+const HAVE_API_BASE=(window.HAVE_API_BASE||"https://have-self.vercel.app").replace(/\/$/,"");
 
 function showCameraMessage(text){
   cameraMessage.textContent=text;
