@@ -49,11 +49,14 @@ export default async function handler(req,res){
       },
       body:JSON.stringify({
         model:"gpt-5.6-luna",
+        text:{
+          format:{type:"json_object"}
+        },
         input:[{
           role:"user",
           content:[
             {type:"input_text",text:prompt},
-            {type:"input_image",image_url:image}
+            {type:"input_image",image_url:image,detail:"high"}
           ]
         }]
       })
@@ -62,12 +65,21 @@ export default async function handler(req,res){
     if(!response.ok){
       return res.status(response.status).json({error:raw?.error?.message||"Vision request failed"});
     }
-    const text=(raw.output_text||"").trim();
+    const outputText=(raw.output_text||
+      raw?.output?.flatMap(item=>item?.content||[])
+        ?.find(part=>part?.type==="output_text")?.text||
+      "").trim();
+
     let parsed;
     try{
-      parsed=JSON.parse(text.replace(/^\`\`\`json\s*/i,"").replace(/\`\`\`$/,"").trim());
+      parsed=JSON.parse(outputText.replace(/^\`\`\`json\s*/i,"").replace(/\`\`\`$/,"").trim());
     }catch(e){
-      return res.status(502).json({error:"Could not parse recognition result",raw:text});
+      return res.status(502).json({
+        error:"Could not parse recognition result",
+        raw:outputText,
+        status:raw?.status||null,
+        incomplete_reason:raw?.incomplete_details?.reason||null
+      });
     }
     return res.status(200).json({recognition:parsed});
   }catch(err){
