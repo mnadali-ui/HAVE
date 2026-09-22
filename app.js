@@ -5,7 +5,7 @@ const demoCards=[
 ];
 
 function robustEstimate(sources){
-  const vals=sources.map(s=>s.value).filter(Number.isFinite).sort((a,b)=>a-b);
+  const vals=sources.map(s=>s.value).filter(v=>Number.isFinite(v)&&v>0).sort((a,b)=>a-b);
   if(!vals.length)return 0;
   const mid=Math.floor(vals.length/2);
   return vals.length%2?vals[mid]:(vals[mid-1]+vals[mid])/2;
@@ -247,13 +247,25 @@ analyzeCardBtn.addEventListener("click",async()=>{
 
 function tcgdexImage(url){ return url ? url + "/high.webp" : ""; }
 
-function tcgdexPriceValue(v, unit){
-  if(!Number.isFinite(Number(v))) return null;
-  const n=Number(v), u=Number(unit);
-  if(Number.isFinite(u) && u>1) return n/u;
-  return n;
+function tcgdexPriceValue(v){
+  if(v===null || v===undefined || v==="") return null;
+  const n=Number(v);
+  return Number.isFinite(n) && n>0 ? n : null;
 }
-function priceSourcesFromTcgdex(c, recognition=null){
+
+async function usdToEurRate(){
+  try{
+    const res=await fetch("https://api.frankfurter.app/latest?from=USD&to=EUR");
+    if(!res.ok) throw new Error("FX unavailable");
+    const data=await res.json();
+    const rate=Number(data?.rates?.EUR);
+    return Number.isFinite(rate)&&rate>0?rate:null;
+  }catch(e){
+    return null;
+  }
+}
+
+async function priceSourcesFromTcgdex(c, recognition=null){
   const sources=[];
   const p=c&&c.pricing?c.pricing:{};
   const cm=p.cardmarket||null;
@@ -262,23 +274,51 @@ function priceSourcesFromTcgdex(c, recognition=null){
   const wantsHolo=/holo|foil|textured/.test(finish);
 
   if(cm){
-    const unit=cm.unit;
     const raw=wantsHolo
-      ? (cm["trend-holo"] ?? cm["avg7-holo"] ?? cm["avg-holo"] ?? cm["low-holo"])
+      ? (cm["trend-holo"] ?? cm["avg7-holo"] ?? cm["avg-holo"] ?? cm["low-holo"] ?? cm.trend ?? cm.avg7 ?? cm.avg ?? cm.low)
       : (cm.trend ?? cm.avg7 ?? cm.avg ?? cm.low);
-    const value=tcgdexPriceValue(raw,unit);
-    if(Number.isFinite(value)) sources.push({name:"Cardmarket",value,updated:cm.updated||null});
+    const value=tcgdexPriceValue(raw);
+    if(value!==null){
+      sources.push({
+        name:"Cardmarket",
+        value,
+        currency:"EUR",
+        originalValue:value,
+        originalCurrency:"EUR",
+        updated:cm.updated||null
+      });
+    }
   }
 
   if(tp){
-    const unit=tp.unit;
     const variant=wantsHolo
-      ? (tp.holofoil || tp["reverse-holofoil"] || tp["1st-edition-holofoil"] || tp["unlimited-holofoil"])
-      : (tp.normal || tp.unlimited || tp["1st-edition"]);
+      ? (tp.holofoil || tp["reverse-holofoil"] || tp["1st-edition-holofoil"] || tp["unlimited-holofoil"] || tp.normal || tp.unlimited || tp["1st-edition"])
+      : (tp.normal || tp.unlimited || tp["1st-edition"] || tp.holofoil || tp["reverse-holofoil"]);
     if(variant){
-      const raw=variant.marketPrice ?? variant.midPrice ?? variant.lowPrice;
-      const value=tcgdexPriceValue(raw,unit);
-      if(Number.isFinite(value)) sources.push({name:"TCGplayer",value,updated:tp.updated||null});
+      const usd=tcgdexPriceValue(variant.marketPrice ?? variant.midPrice ?? variant.lowPrice);
+      if(usd!==null){
+        const rate=await usdToEurRate();
+        if(rate!==null){
+          sources.push({
+            name:"TCGplayer",
+            value:usd*rate,
+            currency:"EUR",
+            originalValue:usd,
+            originalCurrency:"USD",
+            fxRate:rate,
+            updated:tp.updated||null
+          });
+        }else{
+          sources.push({
+            name:"TCGplayer",
+            value:null,
+            currency:"USD",
+            originalValue:usd,
+            originalCurrency:"USD",
+            updated:tp.updated||null
+          });
+        }
+      }
     }
   }
   return sources;
@@ -339,7 +379,7 @@ async function loadCatalogCard(id,locale="it"){
     if(!res.ok && locale!=="en") res=await fetch("https://api.tcgdex.net/v2/en/cards/"+encodeURIComponent(id));
     if(!res.ok) throw new Error("Carta non disponibile");
     const c=await res.json();
-    const sources=priceSourcesFromTcgdex(c,lastRecognition);
+    const sources=await priceSourcesFromTcgdex(c,lastRecognition);
     const priceUpdated=latestPriceUpdate(sources);
     const total=(c.set&&c.set.cardCount&&(c.set.cardCount.official||c.set.cardCount.total))||"";
     const r=lastRecognition||{};
@@ -401,7 +441,7 @@ function showDetail(id){
     </div></div>
     <div class="market-box">
       <strong>Valori di mercato</strong>
-      ${(c.sources||[]).map(s=>`<div class="market-line"><span>${s.name}</span><strong>${euro(s.value)}</strong></div>`).join("")}
+      ${(c.sources||[]).map(s=>`<div class="market-line"><span>${s.name}${s.originalCurrency==="USD"&&Number.isFinite(s.originalValue)?` (${s.originalValue.toFixed(2)} → EUR)`:``}</span><strong>${Number.isFinite(s.value)?euro(s.value):"Cambio EUR non disponibile"}</strong></div>`).join("")}
       <div class="market-line estimate"><span>Stima HAVE</span><span>${euro(robustEstimate(c.sources||[]))}</span></div>
       <div class="source-note">Ultimo aggiornamento: ${c.updated||"—"}. I valori mostrati in questa versione sono demo. L'integrazione reale userà fonti legittime e mostrerà sempre provenienza e timestamp.</div>
     </div>
