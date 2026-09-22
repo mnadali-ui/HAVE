@@ -15,3 +15,7 @@ HAVE è una web app mobile-first per gestire collezioni di carte collezionabili 
 La prima base funzionante include interfaccia mobile, acquisizione foto, riconoscimento demo, collezione locale, scheda carta e valori demo.
 
 I dati di mercato reali e il riconoscimento automatico reale verranno collegati nelle prossime iterazioni.
+
+## Riconoscimento immagini
+Il frontend chiama `/api/recognize`. Il backend Vercel usa OpenAI Vision tramite la Responses API.
+La chiave `OPENAI_API_KEY` deve essere configurata come Environment Variable su Vercel e non va mai inserita nel frontend.
