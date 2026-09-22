@@ -68,13 +68,12 @@
         <div id="cameraPanel" class="camera-panel scan-live">
           <video id="cameraVideo" playsinline autoplay muted></video>
           <div class="camera-guide"><span></span></div>
-          <div class="camera-bottom">
-            <label class="gallery-mini" aria-label="Scegli una foto">
+          <div class="camera-bottom minimal">
+            <label class="gallery-mini compact" aria-label="Scegli una foto">
               ▣
               <input id="galleryInput" type="file" accept="image/*" hidden />
             </label>
             <button class="shutter" id="takePhotoBtn" type="button" aria-label="Scatta foto"><span></span></button>
-            <button class="flip-placeholder" type="button" aria-label="Fotocamera posteriore">⌁</button>
           </div>
           <canvas id="cameraCanvas" class="hidden"></canvas>
         </div>
