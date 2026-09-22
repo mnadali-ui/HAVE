@@ -101,7 +101,11 @@ const cameraMessage=document.getElementById("cameraMessage");
 const scanCloseBtn=document.getElementById("scanCloseBtn");
 const retakeBtn=document.getElementById("retakeBtn");
 const analyzeCardBtn=document.getElementById("analyzeCardBtn");
+const catalogQuery=document.getElementById("catalogQuery");
+const catalogSearchBtn=document.getElementById("catalogSearchBtn");
+const catalogResults=document.getElementById("catalogResults");
 let cameraStream=null;
+let selectedCatalogCard=null;
 
 function showCameraMessage(text){
   cameraMessage.textContent=text;
@@ -169,12 +173,53 @@ document.addEventListener("visibilitychange",()=>{if(document.hidden&&cameraStre
 
 analyzeCardBtn.addEventListener("click",()=>{
   const notice=document.getElementById("recognitionNotice");
-  notice.textContent="Analisi demo in corso…";
-  setTimeout(()=>{
-    notice.textContent="Demo: carta riconosciuta. Il prossimo passaggio collega il riconoscimento reale a set, numero e variante.";
-    document.getElementById("detectedCards").scrollIntoView({behavior:"smooth",block:"start"});
-  },700);
+  notice.textContent="Per questa versione conferma la carta nel catalogo reale qui sotto.";
+  catalogQuery.focus();
+  catalogQuery.scrollIntoView({behavior:"smooth",block:"center"});
 });
+
+function tcgdexImage(url){ return url ? url + "/high.webp" : ""; }
+
+async function searchCatalog(){
+  const q=catalogQuery.value.trim();
+  if(q.length<2){catalogResults.innerHTML='<div class="catalog-status">Scrivi almeno 2 caratteri.</div>';return;}
+  catalogResults.innerHTML='<div class="catalog-status">Ricerca nel catalogo…</div>';
+  try{
+    const url="https://api.tcgdex.net/v2/it/cards?name="+encodeURIComponent(q)+"&pagination:itemsPerPage=20";
+    const res=await fetch(url,{headers:{"Accept":"application/json"}});
+    if(!res.ok) throw new Error("Catalogo non disponibile");
+    const cards=await res.json();
+    const list=Array.isArray(cards)?cards.slice(0,20):[];
+    if(!list.length){catalogResults.innerHTML='<div class="catalog-status">Nessuna carta trovata.</div>';return;}
+    catalogResults.innerHTML=list.map(c=>'<button class="catalog-card" type="button" data-catalog-id="'+c.id+'"><img src="'+tcgdexImage(c.image)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'"><div><strong>'+(c.name||"Carta Pokémon")+'</strong><div class="meta">Numero '+(c.localId||"—")+'</div><div class="catalog-id">'+c.id+'</div></div><span>›</span></button>').join("");
+    catalogResults.querySelectorAll("[data-catalog-id]").forEach(btn=>btn.addEventListener("click",()=>loadCatalogCard(btn.dataset.catalogId)));
+  }catch(err){catalogResults.innerHTML='<div class="catalog-status error">Non riesco a collegarmi al catalogo. Riprova.</div>';}
+}
+
+async function loadCatalogCard(id){
+  catalogResults.innerHTML='<div class="catalog-status">Carico i dettagli…</div>';
+  try{
+    const res=await fetch("https://api.tcgdex.net/v2/it/cards/"+encodeURIComponent(id));
+    if(!res.ok) throw new Error("Carta non disponibile");
+    const c=await res.json();
+    const total=(c.set&&c.set.cardCount&&(c.set.cardCount.official||c.set.cardCount.total))||"";
+    selectedCatalogCard={id:"tcgdex-"+c.id,catalogId:c.id,name:c.name||"Carta Pokémon",set:(c.set&&c.set.name)||"Set sconosciuto",setCode:(c.set&&c.set.id)||"",number:total?(c.localId+"/"+total):(c.localId||"—"),rarity:c.rarity||"—",language:"ITA",variant:"Da confermare",status:"keep",emoji:"🃏",image:tcgdexImage(c.image),sources:[],updated:"Catalogo live"};
+    detected=[selectedCatalogCard];
+    document.getElementById("detectedCards").innerHTML=realCardRow(selectedCatalogCard);
+    document.getElementById("addDetected").classList.remove("hidden");
+    catalogResults.innerHTML='<div class="catalog-status success">Carta selezionata dal catalogo reale.</div>';
+    bindCardClicks();
+    document.getElementById("detectedCards").scrollIntoView({behavior:"smooth",block:"center"});
+  }catch(err){catalogResults.innerHTML='<div class="catalog-status error">Non riesco a caricare questa carta.</div>';}
+}
+
+function realCardRow(c){
+  const art=c.image?'<img class="card-thumb real-thumb" src="'+c.image+'" alt="'+c.name+'" onerror="this.style.display=\'none\'">':'<div class="card-thumb">🃏</div>';
+  return '<button class="card-row" data-card="'+c.id+'" style="width:100%;text-align:left;border-style:solid">'+art+'<div><div class="card-name">'+c.name+'</div><div class="meta">'+c.set+' • '+c.number+'</div><div class="meta">'+c.language+' • '+c.rarity+'</div><span class="pill">CATALOGO REALE</span></div><div class="price"><span class="meta">Prezzo<br>da collegare</span></div></button>';
+}
+
+catalogSearchBtn.addEventListener("click",searchCatalog);
+catalogQuery.addEventListener("keydown",e=>{if(e.key==="Enter")searchCatalog();});
 
 document.getElementById("addDetected").onclick=()=>{
   const existing=new Set(collection.map(c=>c.id));
