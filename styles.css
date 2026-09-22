@@ -34,3 +34,13 @@
   .scan-view{min-height:calc(100vh - 72px)}
   .camera-panel.scan-live,.camera-panel.scan-live video{height:calc(100svh - 144px);min-height:calc(100svh - 144px)}
 }
+
+body.scanner-mode .topbar{display:none}
+body.scanner-mode .bottom-nav{display:none}
+body.scanner-mode .app-shell{max-width:none;padding-bottom:0;background:#05070a}
+body.scanner-mode main{padding:0}
+body.scanner-mode #scanView{display:block;min-height:100svh}
+body.scanner-mode .scan-header{top:0;padding-top:calc(10px + env(safe-area-inset-top))}
+body.scanner-mode .camera-panel.scan-live{height:calc(100svh - 64px - env(safe-area-inset-top));min-height:0}
+body.scanner-mode .camera-panel.scan-live video{height:100%;min-height:0}
+body.scanner-mode .scan-result{min-height:100svh;padding-top:calc(12px + env(safe-area-inset-top));padding-bottom:calc(20px + env(safe-area-inset-bottom))}
