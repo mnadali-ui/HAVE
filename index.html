@@ -92,9 +92,18 @@
           </div>
           <img id="scanPreview" alt="Anteprima carta" />
           <button class="cta full analyze-btn" id="analyzeCardBtn" type="button">Riconosci carta</button>
-          <div class="notice" id="recognitionNotice">Per ora il riconoscimento è demo. Stiamo collegando il motore reale.</div>
+          <div class="notice" id="recognitionNotice">Il riconoscimento automatico dell’immagine è in collegamento. Intanto puoi confermare la carta sul catalogo Pokémon reale.</div>
+          <div class="catalog-search">
+            <label for="catalogQuery">Cerca nel catalogo Pokémon</label>
+            <div class="catalog-search-row">
+              <input id="catalogQuery" type="search" placeholder="Es. Pikachu, Charizard..." autocomplete="off" />
+              <button class="catalog-search-btn" id="catalogSearchBtn" type="button">Cerca</button>
+            </div>
+            <div class="catalog-help">Dati carta da TCGdex • catalogo reale</div>
+            <div id="catalogResults" class="catalog-results"></div>
+          </div>
           <div id="detectedCards" class="cards-list"></div>
-          <button class="cta full" id="addDetected">Aggiungi alla collezione</button>
+          <button class="cta full hidden" id="addDetected">Aggiungi alla collezione</button>
         </div>
       </section>
 
