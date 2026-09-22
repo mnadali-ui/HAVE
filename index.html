@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" />
+  <title>HAVE</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <div class="brand">HAVE</div>
+        <div class="tagline">La tua collezione. I tuoi scambi.</div>
+      </div>
+      <button class="icon-btn" id="refreshValues" aria-label="Aggiorna valori">↻</button>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">VALORE COLLEZIONE</div>
+        <div class="portfolio-value" id="portfolioValue">€ 0,00</div>
+        <div class="delta" id="portfolioDelta">Stima demo • aggiornamento giornaliero previsto</div>
+      </section>
+
+      <section class="quick-grid">
+        <button class="quick primary" data-view="scan">
+          <span class="qicon">📷</span>
+          <strong>Scansiona pagina</strong>
+          <small>Fotografa il raccoglitore</small>
+        </button>
+        <button class="quick" data-view="collection">
+          <span class="qicon">🗂️</span>
+          <strong>Collezione</strong>
+          <small id="collectionCount">0 carte</small>
+        </button>
+        <button class="quick" data-view="wishlist">
+          <span class="qicon">⭐</span>
+          <strong>Wishlist</strong>
+          <small>Carte che cerchi</small>
+        </button>
+        <button class="quick" data-view="trades">
+          <span class="qicon">⇄</span>
+          <strong>Trova scambi</strong>
+          <small>Match automatici</small>
+        </button>
+      </section>
+
+      <section class="view active" id="homeView">
+        <div class="section-title">
+          <h2>Le tue carte</h2>
+          <button class="text-btn" data-view="collection">Vedi tutte</button>
+        </div>
+        <div id="homeCards" class="cards-list"></div>
+      </section>
+
+      <section class="view" id="scanView">
+        <div class="section-title"><h2>Scansiona pagina</h2></div>
+        <div class="scan-box">
+          <div class="scan-icon">▦</div>
+          <h3>Fotografa una pagina del raccoglitore</h3>
+          <p>L'app rileverà le carte e ti farà confermare set, numero e variante.</p>
+          <label class="cta">
+            Apri fotocamera
+            <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
+          </label>
+          <label class="secondary-cta">
+            Scegli una foto
+            <input id="galleryInput" type="file" accept="image/*" hidden />
+          </label>
+        </div>
+        <div id="scanResult" class="scan-result hidden">
+          <img id="scanPreview" alt="Anteprima pagina" />
+          <div class="notice">Riconoscimento demo: 9 carte rilevate. Nella fase successiva collegheremo il riconoscimento reale.</div>
+          <div id="detectedCards" class="cards-list"></div>
+          <button class="cta full" id="addDetected">Aggiungi alla collezione</button>
+        </div>
+      </section>
+
+      <section class="view" id="collectionView">
+        <div class="section-title"><h2>Collezione</h2></div>
+        <div class="filter-row">
+          <button class="chip active" data-filter="all">Tutte</button>
+          <button class="chip" data-filter="trade">Scambio</button>
+          <button class="chip" data-filter="keep">Tengo</button>
+        </div>
+        <div id="collectionList" class="cards-list"></div>
+      </section>
+
+      <section class="view" id="wishlistView">
+        <div class="section-title"><h2>Wishlist</h2></div>
+        <div class="empty-card">
+          <strong>Qui metteremo le carte che cerchi.</strong>
+          <p>Serviranno per trovare automaticamente gli utenti con scambi compatibili.</p>
+        </div>
+      </section>
+
+      <section class="view" id="tradesView">
+        <div class="section-title"><h2>Scambi suggeriti</h2></div>
+        <div class="trade-card">
+          <div class="trade-top"><strong>Marco</strong><span class="match">92% compatibile</span></div>
+          <p>Tu dai 3 carte • valore HAVE €34,80</p>
+          <p>Ricevi 2 carte • valore HAVE €35,60</p>
+          <div class="trade-diff">Differenza: €0,80</div>
+          <button class="secondary-cta full">Vedi proposta</button>
+        </div>
+      </section>
+
+      <section class="view" id="detailView">
+        <button class="back-btn" id="backBtn">← Indietro</button>
+        <div id="cardDetail"></div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav">
+      <button class="nav-item active" data-view="home">⌂<span>Home</span></button>
+      <button class="nav-item" data-view="collection">▦<span>Carte</span></button>
+      <button class="nav-item scan-nav" data-view="scan">＋<span>Scansiona</span></button>
+      <button class="nav-item" data-view="wishlist">☆<span>Wishlist</span></button>
+      <button class="nav-item" data-view="trades">⇄<span>Scambi</span></button>
+    </nav>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
