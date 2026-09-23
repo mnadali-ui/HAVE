@@ -227,8 +227,11 @@ analyzeCardBtn.addEventListener("click",async()=>{
       catalogVerified:false,
       updated:"Riconoscimento visivo"
     };
-    detected=[provisional];
-    document.getElementById("detectedCards").innerHTML=realCardRow(provisional);
+    const recognitionUncertain=r.needs_confirmation===true||String(r.needs_confirmation).toLowerCase()==="true";
+    detected=recognitionUncertain?[]:[provisional];
+    document.getElementById("detectedCards").innerHTML=recognitionUncertain
+      ? '<div class="catalog-status error">Identità non ancora confermata. Seleziona la carta corretta dal catalogo.</div>'
+      : realCardRow(provisional);
     document.getElementById("addDetected").classList.add("hidden");
     const confidence=Math.round((Number(r.confidence)||0)*100);
     const details=[r.language,r.finish,r.stamp||r.stamp_text,r.edition,r.promo].filter(Boolean).join(" • ");
@@ -346,9 +349,12 @@ async function searchCatalog(recognition=null){
       const urls=[];
       if(recognition&&recognition.number){
         const localId=String(recognition.number).split("/")[0];
-        urls.push("https://api.tcgdex.net/v2/"+locale+"/cards?localId="+encodeURIComponent(localId)+"&pagination:itemsPerPage=100");
+        urls.push("https://api.tcgdex.net/v2/"+locale+"/cards?localId="+encodeURIComponent("eq:"+localId)+"&pagination:itemsPerPage=100");
       }
-      urls.push("https://api.tcgdex.net/v2/"+locale+"/cards?name="+encodeURIComponent(q)+"&pagination:itemsPerPage=100");
+      if(q){
+        urls.push("https://api.tcgdex.net/v2/"+locale+"/cards?name="+encodeURIComponent("eq:"+q)+"&pagination:itemsPerPage=100");
+        urls.push("https://api.tcgdex.net/v2/"+locale+"/cards?name="+encodeURIComponent(q)+"&pagination:itemsPerPage=100");
+      }
 
       const merged=new Map();
       for(const url of urls){
@@ -371,14 +377,18 @@ async function searchCatalog(recognition=null){
         recognition.number
       ].filter(Boolean);
       const wantedNumbers=[...new Set(rawNumbers.map(n=>String(n).split("/")[0].replace(/^0+/,"")))];
-      exact=list.filter(c=>wantedNumbers.includes(String(c.localId||"").replace(/^0+/,"")));
+      const wantedName=String(recognition.name||"").trim().toLowerCase();
+      const numberMatches=list.filter(c=>wantedNumbers.includes(String(c.localId||"").replace(/^0+/,"")));
+      exact=numberMatches.filter(c=>!wantedName || String(c.name||"").trim().toLowerCase()===wantedName);
       if(exact.length) list=[...exact,...list.filter(c=>!exact.includes(c))];
     }
     list=list.slice(0,20);
     if(!list.length){
       catalogResults.innerHTML='<div class="catalog-status">Nessuna corrispondenza nel catalogo. Puoi comunque aggiungere la carta riconosciuta e verificarla dopo.</div>';
-      document.getElementById("addDetected").classList.remove("hidden");
-      bindCardClicks();
+      if(detected.length){
+        document.getElementById("addDetected").classList.remove("hidden");
+        bindCardClicks();
+      }
       return;
     }
     if(recognition && exact.length===1 && recognition.needs_confirmation!==true && String(recognition.needs_confirmation).toLowerCase()!=="true"){
