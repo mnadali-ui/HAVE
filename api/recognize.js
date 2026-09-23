@@ -13,36 +13,7 @@ export default async function handler(req,res){
     return res.status(400).json({error:"Missing image"});
   }
 
-  const prompt=[
-    "You are the exact-variant recognition engine for HAVE, an app for collectible-card cataloging and trading.",
-    "Your task is NOT merely to identify the Pokemon name. You must identify the exact physical Pokemon TCG printing visible in the photo.",
-    "Before answering, inspect the entire card and cross-check all visible evidence: card name, collector number, set symbol or set code, artwork, rarity marks, copyright line, language, foil pattern, borders, promo numbering, edition marks and any printed stamp or event logo.",
-    "Treat two cards with the same name and artwork as DIFFERENT variants if any stamp, logo, language, finish, promo mark, edition or special printing differs.",
-    "Pay special attention to small printed marks such as League, Regional, Championship, Prerelease, STAFF, Pokemon Center, tournament, event, store, anniversary or other special stamps.",
-    "If a special symbol or stamp is visible but you cannot identify it confidently, report that a special marking is present instead of silently treating the card as a normal version.",
-    "Do not infer a normal version when the image may contain a special printing.",
-    "Return ONLY valid JSON with exactly these keys:",
-    "name, set, set_code, number, number_candidates, language, rarity, finish, variant, stamp, stamp_text, edition, promo, special_markings, confidence, exact_variant_confidence, needs_confirmation, confirmation_reason, notes.",
-    "language must represent the printed language on the card when visible, using codes such as ITA, ENG, JPN, FRA, DEU, ESP, KOR, CHN.",
-    "finish should distinguish normal, holo, reverse holo, cosmos holo, cracked ice, foil, textured foil or another visible treatment when possible.",
-    "stamp should identify the type of special stamp/logo when possible.",
-    "stamp_text should transcribe any visible special stamp or logo text as accurately as possible.",
-    "edition should capture 1st Edition, Unlimited or another edition marker when visible.",
-    "promo should capture promo status and promo numbering when visible.",
-    "special_markings must be an array of other distinctive printed marks or logos.",
-    "confidence is confidence that the base card identity is correct.",
-    "exact_variant_confidence is confidence that the exact printing/variant is correct.",
-    "needs_confirmation must be true whenever language, finish, stamp, edition, promo status, collector number or exact variant is uncertain.",
-    "confirmation_reason must briefly state what the user should verify when needs_confirmation is true.",
-    "Use null when a field cannot be determined from visible evidence.",
-    "Never invent a set, number, language, stamp, finish, promo status or variant.",
-    "If a set or expansion code is visibly printed or can be determined confidently from the exact card, return it in set_code; otherwise use null. Never invent a set code.",
-    "Read the collector number with extreme care. Inspect each digit separately, especially similar digits such as 1/7, 3/8, 5/6 and 8/9. Preserve the printed format such as 179/132. If one or more digits are not clearly legible, do NOT guess: set number to null and return up to three plausible readings in number_candidates. number_candidates must be an array of strings. If number is clear, number_candidates should contain that same reading only.",
-    "Read any tiny stamp text very carefully.",
-    "A high confidence score is allowed only when the visible details support the exact variant, not just the Pokemon name."
-  ].join(" ");
-
-  try{
+  async function callVision(textPrompt){
     const response=await fetch("https://api.openai.com/v1/responses",{
       method:"POST",
       headers:{
@@ -51,40 +22,93 @@ export default async function handler(req,res){
       },
       body:JSON.stringify({
         model:"gpt-5.6-luna",
-        text:{
-          format:{type:"json_object"}
-        },
+        text:{format:{type:"json_object"}},
         input:[{
           role:"user",
           content:[
-            {type:"input_text",text:prompt},
+            {type:"input_text",text:textPrompt},
             {type:"input_image",image_url:image,detail:"high"}
           ]
         }]
       })
     });
     const raw=await response.json();
-    if(!response.ok){
-      return res.status(response.status).json({error:raw?.error?.message||"Vision request failed"});
-    }
+    if(!response.ok) throw new Error(raw?.error?.message||"Vision request failed");
     const outputText=(raw.output_text||
       raw?.output?.flatMap(item=>item?.content||[])
         ?.find(part=>part?.type==="output_text")?.text||
       "").trim();
-
-    let parsed;
     try{
-      parsed=JSON.parse(outputText.replace(/^\`\`\`json\s*/i,"").replace(/\`\`\`$/,"").trim());
+      return JSON.parse(outputText.replace(/^```json\s*/i,"").replace(/```$/,"").trim());
     }catch(e){
-      return res.status(502).json({
-        error:"Could not parse recognition result",
-        raw:outputText,
-        status:raw?.status||null,
-        incomplete_reason:raw?.incomplete_details?.reason||null
-      });
+      const err=new Error("Could not parse recognition result");
+      err.raw=outputText;
+      throw err;
     }
-    return res.status(200).json({recognition:parsed});
+  }
+
+  const transcriptionPrompt=[
+    "You are doing visual transcription of a Pokemon TCG card photo.",
+    "Do NOT identify the card from memory unless the text is visibly supported.",
+    "Read only what is actually visible on the physical card.",
+    "Return ONLY JSON with keys: visible_name, visible_number, number_candidates, visible_set_code, visible_set_symbol_description, visible_language, visible_hp, visible_rarity_text, visible_stamp_text, visible_promo_text, visible_finish, visible_clues, transcription_confidence.",
+    "visible_name is the printed Pokemon/card name if legible, otherwise null.",
+    "visible_number is the printed collector number exactly as seen, like 188/132, otherwise null.",
+    "number_candidates must contain up to three plausible readings if any digit is uncertain.",
+    "visible_set_code must be null unless an actual code is printed visibly.",
+    "visible_language is the printed language inferred from readable card text.",
+    "visible_clues must be an array of short literal observations from the image, such as attack names, HP, copyright year, regulation mark, special logo or distinctive printed text.",
+    "Do not guess a set or card identity. If uncertain, use null."
+  ].join(" ");
+
+  try{
+    const evidence=await callVision(transcriptionPrompt);
+
+    const identifyPrompt=[
+      "You are the exact-variant recognition engine for HAVE.",
+      "Use the attached card photo AND the prior visual transcription below.",
+      "You must identify the exact physical Pokemon TCG printing, but only when the visible evidence is coherent.",
+      "PRIOR TRANSCRIPTION JSON: "+JSON.stringify(evidence),
+      "Hard rules:",
+      "1. Collector number is a hard constraint. Never output a card whose collector number conflicts with a clearly read visible_number.",
+      "2. Printed card name is a hard constraint when clearly legible.",
+      "3. If name, number, set clues or artwork are inconsistent, do NOT force a match. Set needs_confirmation=true and explain the conflict.",
+      "4. Never substitute a famous or visually similar card.",
+      "5. Set code may be inferred only when the exact card identity is otherwise strongly supported.",
+      "6. Treat language, finish, stamp, promo, edition and special printing as part of the exact variant.",
+      "Return ONLY JSON with exactly these keys:",
+      "name, set, set_code, number, number_candidates, language, rarity, finish, variant, stamp, stamp_text, edition, promo, special_markings, confidence, exact_variant_confidence, needs_confirmation, confirmation_reason, notes.",
+      "If exact identity is not supported, use null for uncertain identity fields instead of guessing.",
+      "confidence is confidence in base card identity; exact_variant_confidence is confidence in exact printing."
+    ].join(" ");
+
+    const identified=await callVision(identifyPrompt);
+
+    if(evidence?.visible_number){
+      const ev=String(evidence.visible_number).trim();
+      const out=identified?.number?String(identified.number).trim():"";
+      if(out && ev!==out){
+        identified.needs_confirmation=true;
+        identified.confirmation_reason="Il numero letto dalla carta ("+ev+") non coincide con l'identificazione proposta ("+out+").";
+        identified.number=ev;
+        identified.number_candidates=Array.from(new Set([ev,...(Array.isArray(evidence.number_candidates)?evidence.number_candidates:[])]));
+        identified.exact_variant_confidence=Math.min(Number(identified.exact_variant_confidence)||0,0.49);
+      }
+    }
+    if(evidence?.visible_name && identified?.name){
+      const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"").trim();
+      if(norm(evidence.visible_name)!==norm(identified.name)){
+        identified.needs_confirmation=true;
+        identified.confirmation_reason=(identified.confirmation_reason?identified.confirmation_reason+" ":"")+"Il nome letto dalla carta non coincide con l'identificazione proposta.";
+        identified.exact_variant_confidence=Math.min(Number(identified.exact_variant_confidence)||0,0.49);
+      }
+    }
+
+    return res.status(200).json({recognition:identified,evidence});
   }catch(err){
-    return res.status(500).json({error:err.message||"Recognition failed"});
+    return res.status(500).json({
+      error:err.message||"Recognition failed",
+      raw:err.raw||undefined
+    });
   }
 }
