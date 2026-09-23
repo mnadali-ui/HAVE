@@ -249,6 +249,17 @@ analyzeCardBtn.addEventListener("click",async()=>{
 });
 
 function tcgdexImage(url){ return url ? url + "/high.webp" : ""; }
+function tcgdexSetCode(card){
+  if(card&&card.set&&card.set.id) return String(card.set.id);
+  const id=String(card&&card.id||"");
+  const local=String(card&&card.localId||"");
+  if(local && id.endsWith("-"+local)) return id.slice(0,-(local.length+1));
+  const i=id.lastIndexOf("-");
+  return i>0?id.slice(0,i):"—";
+}
+function tcgdexSetName(card){
+  return card&&card.set&&card.set.name?String(card.set.name):"";
+}
 
 function tcgdexPriceValue(v){
   if(v===null || v===undefined || v==="") return null;
@@ -367,9 +378,14 @@ async function searchCatalog(recognition=null){
       }
       return [...merged.values()];
     }
-    let list=await fetchCatalog("it");
-    if(!list.length) list=await fetchCatalog("en");
-    list=list.slice(0,100);
+    const [english,italian]=await Promise.all([
+      fetchCatalog("en"),
+      fetchCatalog("it")
+    ]);
+    const mergedCatalog=new Map();
+    english.forEach(c=>mergedCatalog.set(c.id,c));
+    italian.forEach(c=>mergedCatalog.set(c.id,c));
+    let list=[...mergedCatalog.values()];
     let exact=[];
     if(recognition){
       const rawNumbers=[
@@ -382,7 +398,7 @@ async function searchCatalog(recognition=null){
       exact=numberMatches.filter(c=>!wantedName || String(c.name||"").trim().toLowerCase()===wantedName);
       if(exact.length) list=[...exact,...list.filter(c=>!exact.includes(c))];
     }
-    list=list.slice(0,20);
+    list=list.slice(0,100);
     if(!list.length){
       catalogResults.innerHTML='<div class="catalog-status">Nessuna corrispondenza nel catalogo. Puoi comunque aggiungere la carta riconosciuta e verificarla dopo.</div>';
       if(detected.length){
@@ -396,10 +412,27 @@ async function searchCatalog(recognition=null){
       await loadCatalogCard(exact[0].id,exact[0]._locale||"it");
       return;
     }
-    catalogResults.innerHTML=list.map(c=>'<button class="catalog-card" type="button" data-catalog-id="'+c.id+'" data-catalog-locale="'+(c._locale||"it")+'"><img src="'+tcgdexImage(c.image)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'"><div><strong>'+(c.name||"Carta Pokémon")+'</strong><div class="meta">Numero '+(c.localId||"—")+'</div><div class="catalog-id">Codice catalogo '+c.id+'</div></div><span>›</span></button>').join("");
-    catalogResults.querySelectorAll("[data-catalog-id]").forEach(btn=>btn.addEventListener("click",()=>loadCatalogCard(btn.dataset.catalogId,btn.dataset.catalogLocale||"it")));
-    document.getElementById("addDetected").classList.remove("hidden");
-    bindCardClicks();
+    const setOptions=[...new Map(list.map(c=>{
+      const code=tcgdexSetCode(c);
+      const name=tcgdexSetName(c);
+      return [code,{code,name}];
+    })).values()].sort((a,b)=>String(a.code).localeCompare(String(b.code)));
+
+    const renderCatalogList=(setFilter="all")=>{
+      const filtered=setFilter==="all"?list:list.filter(c=>tcgdexSetCode(c)===setFilter);
+      const options='<option value="all">Tutte le espansioni ('+list.length+')</option>'+setOptions.map(x=>'<option value="'+String(x.code).replace(/"/g,"&quot;")+'">'+x.code+(x.name?' — '+x.name:'')+'</option>').join("");
+      const cardsHtml=filtered.map(c=>{
+        const setCode=tcgdexSetCode(c);
+        const setName=tcgdexSetName(c);
+        return '<button class="catalog-card" type="button" data-catalog-id="'+c.id+'" data-catalog-locale="'+(c._locale||"it")+'"><img src="'+tcgdexImage(c.image)+'" alt="" loading="lazy" onerror="this.style.display=\'none\'"><div><strong>'+(c.name||"Carta Pokémon")+'</strong><div class="meta">Numero '+(c.localId||"—")+'</div><div class="meta">Codice espansione: <strong>'+setCode+'</strong>'+(setName?' • '+setName:'')+'</div><div class="catalog-id">ID carta '+c.id+' • '+String(c._locale||"").toUpperCase()+'</div></div><span>›</span></button>';
+      }).join("");
+      catalogResults.innerHTML='<div class="catalog-filter"><label for="catalogSetFilter">Espansione</label><select id="catalogSetFilter">'+options+'</select><span class="catalog-filter-count">'+filtered.length+' risultati</span></div>'+cardsHtml;
+      const select=document.getElementById("catalogSetFilter");
+      if(select){select.value=setFilter;select.onchange=()=>renderCatalogList(select.value);}
+      catalogResults.querySelectorAll("[data-catalog-id]").forEach(btn=>btn.addEventListener("click",()=>loadCatalogCard(btn.dataset.catalogId,btn.dataset.catalogLocale||"it")));
+    };
+    renderCatalogList();
+    document.getElementById("addDetected").classList.add("hidden");
   }catch(err){catalogResults.innerHTML='<div class="catalog-status error">Non riesco a collegarmi al catalogo. Riprova.</div>';}
 }
 
