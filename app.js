@@ -250,6 +250,83 @@ analyzeCardBtn.addEventListener("click",async()=>{
 });
 
 
+async function resolvePageCardPrices(card){
+  try{
+    const q=String(card.name||"").trim();
+    const localId=String(card.number||"").split("/")[0].replace(/^0+/,"");
+    const setCode=String(card.setCode||"").toLowerCase();
+
+    async function search(locale){
+      const urls=[];
+      if(localId) urls.push("https://api.tcgdex.net/v2/"+locale+"/cards?localId="+encodeURIComponent("eq:"+localId)+"&pagination:itemsPerPage=100");
+      if(q) urls.push("https://api.tcgdex.net/v2/"+locale+"/cards?name="+encodeURIComponent("eq:"+q)+"&pagination:itemsPerPage=100");
+      const merged=new Map();
+      for(const url of urls){
+        const res=await fetch(url,{headers:{"Accept":"application/json"}});
+        if(!res.ok) continue;
+        const list=await res.json();
+        if(Array.isArray(list)) list.forEach(x=>merged.set(x.id,{...x,_locale:locale}));
+      }
+      return [...merged.values()];
+    }
+
+    const [en,it]=await Promise.all([search("en"),search("it")]);
+    const merged=new Map();
+    en.forEach(x=>merged.set(x.id,x));
+    it.forEach(x=>merged.set(x.id,x));
+
+    let candidates=[...merged.values()].filter(x=>{
+      const sameName=!q || String(x.name||"").trim().toLowerCase()===q.toLowerCase();
+      const sameNum=!localId || String(x.localId||"").replace(/^0+/,"")===localId;
+      return sameName && sameNum;
+    });
+
+    if(setCode){
+      const setMatched=candidates.filter(x=>String(x.id||"").toLowerCase().includes(setCode));
+      if(setMatched.length) candidates=setMatched;
+    }
+    if(candidates.length!==1) return {...card,priceState:"unverified"};
+
+    const candidate=candidates[0];
+    let res=await fetch("https://api.tcgdex.net/v2/"+(candidate._locale||"en")+"/cards/"+encodeURIComponent(candidate.id));
+    if(!res.ok && candidate._locale!=="en") res=await fetch("https://api.tcgdex.net/v2/en/cards/"+encodeURIComponent(candidate.id));
+    if(!res.ok) return {...card,priceState:"unverified"};
+
+    const full=await res.json();
+    const recognition={finish:card.finish||card.variant||"",language:card.language,number:card.number,name:card.name,set:card.set,set_code:card.setCode};
+
+    let sources=await priceSourcesFromTcgdex(full,recognition);
+    const directCm=await fetchDirectCardmarketPrice({
+      name:full.name||card.name,
+      number:full.localId||card.number,
+      set:(full.set&&full.set.name)||card.set,
+      setCode:(full.set&&full.set.id)||card.setCode,
+      finish:card.finish||card.variant,
+      idProduct:full?.pricing?.cardmarket?.idProduct||null
+    });
+    sources=sources.filter(s=>s.name!=="Cardmarket");
+    if(directCm && Number.isFinite(directCm.value) && directCm.value>0) sources.unshift(directCm);
+
+    const total=(full.set&&full.set.cardCount&&(full.set.cardCount.official||full.set.cardCount.total))||"";
+    return {
+      ...card,
+      catalogId:full.id,
+      cardmarketIdProduct:full?.pricing?.cardmarket?.idProduct||null,
+      set:(full.set&&full.set.name)||card.set,
+      setCode:(full.set&&full.set.id)||card.setCode,
+      number:total?(full.localId+"/"+total):(full.localId||card.number),
+      rarity:full.rarity||card.rarity,
+      image:tcgdexImage(full.image)||card.image,
+      catalogVerified:true,
+      sources,
+      updated:latestPriceUpdate(sources),
+      priceState:(sources||[]).some(s=>Number.isFinite(s.value)&&s.value>0)?"ready":"missing"
+    };
+  }catch(e){
+    return {...card,priceState:"error"};
+  }
+}
+
 analyzePageBtn.addEventListener("click",async()=>{
   const notice=document.getElementById("recognitionNotice");
   if(!currentImageDataUrl){
@@ -295,18 +372,40 @@ analyzePageBtn.addEventListener("click",async()=>{
       recognitionConfidence:Number(r.confidence)||null,
       catalogVerified:false,
       pagePosition:r.position||i+1,
-      updated:"Riconoscimento pagina"
+      updated:"Riconoscimento pagina",
+      priceState:"loading"
     }));
 
-    notice.textContent="Riconosciute "+detected.length+" carte. Verifica quelle incerte prima di aggiungerle.";
-    document.getElementById("detectedCards").innerHTML=detected.map((c,i)=>{
-      const conf=Math.round((c.recognitionConfidence||0)*100);
-      return '<div class="card-row page-card-row"><div class="card-thumb">'+(i+1)+'</div><div><div class="card-name">'+c.name+'</div><div class="meta">'+c.set+' • '+c.number+'</div><div class="meta">Codice espansione: '+(c.setCode||"—")+'</div><div class="meta">'+c.language+' • '+c.variant+'</div><span class="pill">'+(conf?conf+"%":"DA VERIFICARE")+'</span></div><div class="price"><span class="meta">Prezzo<br>da verificare</span></div></div>';
-    }).join("");
+    const renderPageCards=()=>{
+      document.getElementById("detectedCards").innerHTML=detected.map((c,i)=>{
+        const conf=Math.round((c.recognitionConfidence||0)*100);
+        const estimate=robustEstimate(c.sources||[]);
+        let priceHtml='<span class="meta">Prezzo<br>da verificare</span>';
+        if(c.priceState==="loading") priceHtml='<span class="meta">Prezzo<br>in ricerca…</span>';
+        else if(estimate>0) priceHtml=euro(estimate)+'<div class="meta">Stima HAVE</div>';
+        else if(c.priceState==="unverified") priceHtml='<span class="meta">Carta<br>da confermare</span>';
+        return '<div class="card-row page-card-row"><div class="card-thumb">'+(i+1)+'</div><div><div class="card-name">'+c.name+'</div><div class="meta">'+c.set+' • '+c.number+'</div><div class="meta">Codice espansione: '+(c.setCode||"—")+'</div><div class="meta">'+c.language+' • '+c.variant+'</div><span class="pill">'+(c.catalogVerified?"CATALOGO REALE":(conf?conf+"%":"DA VERIFICARE"))+'</span></div><div class="price">'+priceHtml+'</div></div>';
+      }).join("");
+    };
 
-    document.getElementById("addDetected").classList.remove("hidden");
-    catalogResults.innerHTML='<div class="catalog-status">Pagina riconosciuta. In questa prima versione i prezzi vengono collegati dopo la conferma delle singole carte.</div>';
+    notice.textContent="Riconosciute "+detected.length+" carte. Sto collegando catalogo e prezzi.";
+    renderPageCards();
+    document.getElementById("addDetected").classList.add("hidden");
+    catalogResults.innerHTML='<div class="catalog-status">Recupero Cardmarket e TCGplayer per le carte riconosciute…</div>';
     document.getElementById("detectedCards").scrollIntoView({behavior:"smooth",block:"start"});
+
+    const enriched=[];
+    for(let i=0;i<detected.length;i++){
+      enriched[i]=await resolvePageCardPrices(detected[i]);
+      detected[i]=enriched[i];
+      renderPageCards();
+    }
+
+    const priced=detected.filter(c=>robustEstimate(c.sources||[])>0).length;
+    const verified=detected.filter(c=>c.catalogVerified).length;
+    notice.textContent="Riconosciute "+detected.length+" carte • "+verified+" verificate • "+priced+" con prezzo.";
+    catalogResults.innerHTML='<div class="catalog-status success">Prezzi collegati dove il match catalogo è univoco. Le carte rimaste senza prezzo vanno confermate singolarmente.</div>';
+    document.getElementById("addDetected").classList.remove("hidden");
   }catch(err){
     notice.textContent="Errore riconoscimento pagina: "+(err&&err.message?err.message:"errore sconosciuto");
   }finally{
