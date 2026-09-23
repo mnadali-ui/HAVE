@@ -109,6 +109,7 @@ const cameraMessage=document.getElementById("cameraMessage");
 const scanCloseBtn=document.getElementById("scanCloseBtn");
 const retakeBtn=document.getElementById("retakeBtn");
 const analyzeCardBtn=document.getElementById("analyzeCardBtn");
+const analyzePageBtn=document.getElementById("analyzePageBtn");
 const catalogQuery=document.getElementById("catalogQuery");
 const catalogSearchBtn=document.getElementById("catalogSearchBtn");
 const catalogResults=document.getElementById("catalogResults");
@@ -245,6 +246,73 @@ analyzeCardBtn.addEventListener("click",async()=>{
   }finally{
     analyzeCardBtn.disabled=false;
     analyzeCardBtn.textContent="Riconosci carta";
+  }
+});
+
+
+analyzePageBtn.addEventListener("click",async()=>{
+  const notice=document.getElementById("recognitionNotice");
+  if(!currentImageDataUrl){
+    notice.textContent="Prima scatta o scegli una foto.";
+    return;
+  }
+
+  analyzePageBtn.disabled=true;
+  analyzeCardBtn.disabled=true;
+  analyzePageBtn.textContent="Riconoscimento pagina…";
+  notice.textContent="Sto analizzando tutte le carte visibili nella pagina.";
+
+  try{
+    const res=await fetch(HAVE_API_BASE+"/api/recognize-page",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({image:currentImageDataUrl})
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||"Servizio pagina non disponibile");
+
+    const cards=Array.isArray(data.cards)?data.cards:[];
+    if(!cards.length){
+      throw new Error("Nessuna carta riconosciuta nella pagina");
+    }
+
+    detected=cards.map((r,i)=>({
+      id:"page-"+Date.now()+"-"+i,
+      name:r.name||"Carta da confermare",
+      set:r.set||"Espansione da verificare",
+      setCode:r.set_code||"",
+      number:r.number||"—",
+      rarity:r.rarity||"—",
+      language:r.language||"Da confermare",
+      finish:r.finish||null,
+      stamp:r.stamp||null,
+      promo:r.promo||null,
+      variant:[r.finish,r.variant,r.stamp,r.promo].filter(Boolean).join(" • ")||"Da verificare",
+      status:"keep",
+      emoji:"🃏",
+      image:"",
+      sources:[],
+      recognitionConfidence:Number(r.confidence)||null,
+      catalogVerified:false,
+      pagePosition:r.position||i+1,
+      updated:"Riconoscimento pagina"
+    }));
+
+    notice.textContent="Riconosciute "+detected.length+" carte. Verifica quelle incerte prima di aggiungerle.";
+    document.getElementById("detectedCards").innerHTML=detected.map((c,i)=>{
+      const conf=Math.round((c.recognitionConfidence||0)*100);
+      return '<div class="card-row page-card-row"><div class="card-thumb">'+(i+1)+'</div><div><div class="card-name">'+c.name+'</div><div class="meta">'+c.set+' • '+c.number+'</div><div class="meta">Codice espansione: '+(c.setCode||"—")+'</div><div class="meta">'+c.language+' • '+c.variant+'</div><span class="pill">'+(conf?conf+"%":"DA VERIFICARE")+'</span></div><div class="price"><span class="meta">Prezzo<br>da verificare</span></div></div>';
+    }).join("");
+
+    document.getElementById("addDetected").classList.remove("hidden");
+    catalogResults.innerHTML='<div class="catalog-status">Pagina riconosciuta. In questa prima versione i prezzi vengono collegati dopo la conferma delle singole carte.</div>';
+    document.getElementById("detectedCards").scrollIntoView({behavior:"smooth",block:"start"});
+  }catch(err){
+    notice.textContent="Errore riconoscimento pagina: "+(err&&err.message?err.message:"errore sconosciuto");
+  }finally{
+    analyzePageBtn.disabled=false;
+    analyzeCardBtn.disabled=false;
+    analyzePageBtn.textContent="Riconosci pagina intera";
   }
 });
 
