@@ -104,6 +104,35 @@ export default async function handler(req,res){
       }
     }
 
+    const clean=v=>v===undefined||v===null||String(v).trim()===""?null:String(v).trim();
+    const visibleName=clean(evidence?.visible_name);
+    const visibleNumber=clean(evidence?.visible_number);
+    const visibleLanguage=clean(evidence?.visible_language);
+    const visibleFinish=clean(evidence?.visible_finish);
+
+    if(visibleName) identified.name=visibleName;
+    if(visibleNumber){
+      identified.number=visibleNumber;
+      identified.number_candidates=Array.from(new Set([
+        visibleNumber,
+        ...(Array.isArray(evidence?.number_candidates)?evidence.number_candidates:[])
+      ].filter(Boolean)));
+    }
+    if(visibleLanguage) identified.language=visibleLanguage;
+    if(visibleFinish) identified.finish=visibleFinish;
+
+    const transcriptionConfidence=Number(evidence?.transcription_confidence)||0;
+    if(!visibleName || !visibleNumber || transcriptionConfidence<0.72){
+      identified.needs_confirmation=true;
+      identified.confirmation_reason=[
+        identified.confirmation_reason,
+        !visibleName?"Nome non leggibile con sufficiente certezza.":null,
+        !visibleNumber?"Numero collezione non leggibile con sufficiente certezza.":null,
+        transcriptionConfidence<0.72?"Lettura visiva poco affidabile.":null
+      ].filter(Boolean).join(" ");
+      identified.exact_variant_confidence=Math.min(Number(identified.exact_variant_confidence)||0,0.49);
+    }
+
     return res.status(200).json({recognition:identified,evidence});
   }catch(err){
     return res.status(500).json({
