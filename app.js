@@ -534,41 +534,111 @@ async function loadCatalogCard(id,locale="it"){
 
 async function enrichSavedCardPrices(card){
   try{
-    const q=String(card.name||"").trim();
-    if(q.length<2) return card;
-    async function search(locale){
-      const url="https://api.tcgdex.net/v2/"+locale+"/cards?name="+encodeURIComponent(q)+"&pagination:itemsPerPage=50";
-      const res=await fetch(url,{headers:{"Accept":"application/json"}});
-      if(!res.ok) return [];
-      const list=await res.json();
-      return Array.isArray(list)?list.map(x=>({...x,_locale:locale})):[];
+    let full=null;
+    let locale="it";
+
+    // If the user already selected an exact catalog card, use it directly.
+    if(card.catalogId){
+      let res=await fetch("https://api.tcgdex.net/v2/it/cards/"+encodeURIComponent(card.catalogId));
+      if(!res.ok){
+        res=await fetch("https://api.tcgdex.net/v2/en/cards/"+encodeURIComponent(card.catalogId));
+        locale="en";
+      }
+      if(res.ok) full=await res.json();
     }
-    let list=await search("it");
-    if(!list.length) list=await search("en");
-    const wanted=String(card.number||"").split("/")[0].replace(/^0+/,"");
-    let exact=list.filter(x=>String(x.localId||"").replace(/^0+/,"")===wanted);
-    if(!exact.length) return card;
-    let candidate=exact[0];
-    if(exact.length>1 && card.setCode){
-      const sc=String(card.setCode).toLowerCase();
-      candidate=exact.find(x=>String(x.id||"").toLowerCase().includes(sc))||candidate;
+
+    // Fallback only when the card has no exact catalog id yet.
+    if(!full){
+      const q=String(card.name||"").trim();
+      if(q.length<2) return card;
+      async function search(searchLocale){
+        const urls=[
+          "https://api.tcgdex.net/v2/"+searchLocale+"/cards?name="+encodeURIComponent("eq:"+q)+"&pagination:itemsPerPage=100",
+          "https://api.tcgdex.net/v2/"+searchLocale+"/cards?name="+encodeURIComponent(q)+"&pagination:itemsPerPage=100"
+        ];
+        const merged=new Map();
+        for(const url of urls){
+          const res=await fetch(url,{headers:{"Accept":"application/json"}});
+          if(!res.ok) continue;
+          const list=await res.json();
+          if(Array.isArray(list)) list.forEach(x=>merged.set(x.id,{...x,_locale:searchLocale}));
+        }
+        return [...merged.values()];
+      }
+
+      const [it,en]=await Promise.all([search("it"),search("en")]);
+      const merged=new Map();
+      en.forEach(x=>merged.set(x.id,x));
+      it.forEach(x=>merged.set(x.id,x));
+      const list=[...merged.values()];
+
+      const wanted=String(card.number||"").split("/")[0].replace(/^0+/,"");
+      const sc=String(card.setCode||"").toLowerCase();
+      const candidates=list.filter(x=>String(x.localId||"").replace(/^0+/,"")===wanted);
+      if(!candidates.length) return card;
+
+      let candidate=candidates.find(x=>sc && String(x.id||"").toLowerCase().includes(sc))||candidates[0];
+      locale=candidate._locale||"it";
+
+      let res=await fetch("https://api.tcgdex.net/v2/"+locale+"/cards/"+encodeURIComponent(candidate.id));
+      if(!res.ok && locale!=="en"){
+        res=await fetch("https://api.tcgdex.net/v2/en/cards/"+encodeURIComponent(candidate.id));
+        locale="en";
+      }
+      if(!res.ok) return card;
+      full=await res.json();
     }
-    let res=await fetch("https://api.tcgdex.net/v2/"+(candidate._locale||"it")+"/cards/"+encodeURIComponent(candidate.id));
-    if(!res.ok && candidate._locale!=="en") res=await fetch("https://api.tcgdex.net/v2/en/cards/"+encodeURIComponent(candidate.id));
-    if(!res.ok) return card;
-    const full=await res.json();
-    const recognition={finish:card.finish||card.variant||"",language:card.language,number:card.number,name:card.name,set:card.set,set_code:card.setCode};
+
+    const recognition={
+      finish:card.finish||card.variant||"",
+      language:card.language,
+      number:card.number,
+      name:card.name,
+      set:card.set,
+      set_code:card.setCode
+    };
+
     let sources=await priceSourcesFromTcgdex(full,recognition);
-    const directCm=await fetchDirectCardmarketPrice({name:full.name||card.name,number:full.localId||card.number,set:(full.set&&full.set.name)||card.set,setCode:(full.set&&full.set.id)||card.setCode,finish:card.finish||card.variant,idProduct:full?.pricing?.cardmarket?.idProduct||card.cardmarketIdProduct||null});
+
+    const directCm=await fetchDirectCardmarketPrice({
+      name:full.name||card.name,
+      number:full.localId||card.number,
+      set:(full.set&&full.set.name)||card.set,
+      setCode:(full.set&&full.set.id)||card.setCode,
+      finish:card.finish||card.variant,
+      idProduct:full?.pricing?.cardmarket?.idProduct||card.cardmarketIdProduct||null
+    });
+
     sources=sources.filter(s=>s.name!=="Cardmarket");
     if(directCm && Number.isFinite(directCm.value) && directCm.value>0) sources.unshift(directCm);
+
     const total=(full.set&&full.set.cardCount&&(full.set.cardCount.official||full.set.cardCount.total))||"";
-    const updatedCard={...card,catalogId:full.id||candidate.id,cardmarketIdProduct:full?.pricing?.cardmarket?.idProduct||card.cardmarketIdProduct||null,set:(full.set&&full.set.name)||card.set,setCode:(full.set&&full.set.id)||card.setCode,number:total?(full.localId+"/"+total):(full.localId||card.number),rarity:full.rarity||card.rarity,image:tcgdexImage(full.image)||card.image,catalogVerified:true,sources,updated:latestPriceUpdate(sources)};
+    const updatedCard={
+      ...card,
+      catalogId:full.id||card.catalogId,
+      cardmarketIdProduct:full?.pricing?.cardmarket?.idProduct||card.cardmarketIdProduct||null,
+      set:(full.set&&full.set.name)||card.set,
+      setCode:(full.set&&full.set.id)||card.setCode,
+      number:total?(full.localId+"/"+total):(full.localId||card.number),
+      rarity:full.rarity||card.rarity,
+      image:tcgdexImage(full.image)||card.image,
+      catalogVerified:true,
+      sources,
+      updated:latestPriceUpdate(sources)
+    };
+
     const idx=collection.findIndex(x=>x.id===card.id);
-    if(idx>=0){collection[idx]=updatedCard;try{localStorage.setItem("have_collection",JSON.stringify(collection))}catch(e){} renderAll();}
+    if(idx>=0){
+      collection[idx]=updatedCard;
+      try{localStorage.setItem("have_collection",JSON.stringify(collection))}catch(e){}
+      renderAll();
+    }
     return updatedCard;
-  }catch(e){return card;}
+  }catch(e){
+    return card;
+  }
 }
+
 function realCardRow(c){
   const art=c.image?'<img class="card-thumb real-thumb" src="'+c.image+'" alt="'+c.name+'" onerror="this.style.display=\'none\'">':'<div class="card-thumb">🃏</div>';
   const pending=c.catalogVerified===false;
