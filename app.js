@@ -232,7 +232,8 @@ analyzeCardBtn.addEventListener("click",async()=>{
     document.getElementById("addDetected").classList.add("hidden");
     const confidence=Math.round((Number(r.confidence)||0)*100);
     const details=[r.language,r.finish,r.stamp||r.stamp_text,r.edition,r.promo].filter(Boolean).join(" • ");
-    notice.textContent="Riconoscimento: "+(r.name||"carta non certa")+(r.number?" • "+r.number:"")+(confidence?" • "+confidence+"%":"")+(details?"\n"+details:"")+". Verifico nel catalogo Pokémon…";
+    const uncertain=r.needs_confirmation===true||String(r.needs_confirmation).toLowerCase()==="true";
+    notice.textContent="Riconoscimento: "+(r.name||"carta non certa")+(r.number?" • "+r.number:"")+(confidence?" • "+confidence+"%":"")+(details?"\n"+details:"")+(uncertain&&r.confirmation_reason?"\nDa confermare: "+r.confirmation_reason:"")+". Verifico nel catalogo Pokémon…";
     catalogQuery.value=r.name||"";
     await searchCatalog(r);
   }catch(err){
@@ -342,15 +343,27 @@ async function searchCatalog(recognition=null){
   catalogResults.innerHTML='<div class="catalog-status">Ricerca nel catalogo…</div>';
   try{
     async function fetchCatalog(locale){
-      const url="https://api.tcgdex.net/v2/"+locale+"/cards?name="+encodeURIComponent(q)+"&pagination:itemsPerPage=40";
-      const res=await fetch(url,{headers:{"Accept":"application/json"}});
-      if(!res.ok) return [];
-      const cards=await res.json();
-      return Array.isArray(cards)?cards.map(c=>({...c,_locale:locale})):[];
+      const urls=[];
+      if(recognition&&recognition.number){
+        const localId=String(recognition.number).split("/")[0];
+        urls.push("https://api.tcgdex.net/v2/"+locale+"/cards?localId="+encodeURIComponent(localId)+"&pagination:itemsPerPage=100");
+      }
+      urls.push("https://api.tcgdex.net/v2/"+locale+"/cards?name="+encodeURIComponent(q)+"&pagination:itemsPerPage=100");
+
+      const merged=new Map();
+      for(const url of urls){
+        const res=await fetch(url,{headers:{"Accept":"application/json"}});
+        if(!res.ok) continue;
+        const cards=await res.json();
+        if(Array.isArray(cards)){
+          cards.forEach(c=>merged.set(c.id,{...c,_locale:locale}));
+        }
+      }
+      return [...merged.values()];
     }
     let list=await fetchCatalog("it");
     if(!list.length) list=await fetchCatalog("en");
-    list=list.slice(0,40);
+    list=list.slice(0,100);
     let exact=[];
     if(recognition){
       const rawNumbers=[
@@ -368,7 +381,7 @@ async function searchCatalog(recognition=null){
       bindCardClicks();
       return;
     }
-    if(recognition && exact.length===1){
+    if(recognition && exact.length===1 && recognition.needs_confirmation!==true && String(recognition.needs_confirmation).toLowerCase()!=="true"){
       catalogResults.innerHTML='<div class="catalog-status success">Corrispondenza esatta trovata. Carico la carta…</div>';
       await loadCatalogCard(exact[0].id,exact[0]._locale||"it");
       return;
