@@ -68,3 +68,5 @@ body.scanner-mode .scan-result{min-height:100svh;padding-top:calc(12px + env(saf
 @media(max-width:480px){.detail-art{width:86px;height:118px;flex-basis:86px}.detail-art .real-thumb{max-width:86px;max-height:118px}.detail-head{gap:12px}}
 
 #buildVersion{font-weight:700;color:#2563eb;margin-left:6px}
+
+.catalog-filter{display:grid;grid-template-columns:auto minmax(180px,1fr) auto;gap:10px;align-items:center;padding:10px 0 12px}.catalog-filter label{font-size:12px;font-weight:800;color:#475569}.catalog-filter select{width:100%;border:1px solid #cbd5e1;border-radius:10px;padding:9px 10px;background:#fff;color:#111827;font-size:14px}.catalog-filter-count{font-size:11px;color:#64748b;white-space:nowrap}@media(max-width:520px){.catalog-filter{grid-template-columns:1fr}.catalog-filter-count{justify-self:start}}
