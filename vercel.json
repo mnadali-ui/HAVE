@@ -1,5 +1,10 @@
 {
-  "functions":{
-    "api/recognize.js":{"maxDuration":30}
+  "functions": {
+    "api/recognize.js": {
+      "maxDuration": 60
+    },
+    "api/recognize-page.js": {
+      "maxDuration": 60
+    }
   }
 }
